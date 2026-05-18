@@ -14,13 +14,7 @@ class OllamaProvider(BaseProvider):
         return {
             'model': self.config.model,
             'stream': False,
-            'format': {
-                'type': 'json_schema',
-                'json_schema': {
-                    'name': f'{task_type}_response',
-                    'schema': schema,
-                },
-            },
+            'format': schema,
             'options': options,
             'messages': [
                 {'role': 'system', 'content': f'{system_prompt}\n\nReturn JSON matching this schema:\n{json.dumps(schema, indent=2, sort_keys=True)}'},

@@ -3,7 +3,7 @@ from unittest import mock
 
 
 class PhaseAServiceTests(unittest.TestCase):
-    def test_ollama_request_shape_uses_json_schema_prompting(self):
+    def test_ollama_request_shape_uses_raw_schema_format_compatible_with_matrix_ollama(self):
         from viv_ai.config import ProviderConfig
         from viv_ai.providers.ollama import OllamaProvider
 
@@ -22,8 +22,8 @@ class PhaseAServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(request['model'], 'qwen2.5:72b-instruct')
-        self.assertEqual(request['format']['type'], 'json_schema')
-        self.assertEqual(request['format']['json_schema']['schema']['type'], 'object')
+        self.assertEqual(request['format']['type'], 'object')
+        self.assertEqual(request['format']['properties']['summary']['type'], 'string')
         self.assertEqual(request['options']['temperature'], 0.1)
         self.assertIn('system prompt', request['messages'][0]['content'])
 
