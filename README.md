@@ -13,10 +13,16 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Not yet implemented in Phase A:
-- function/binary extraction logic
-- graph or symbolic-analysis orchestration
+Implemented through Phase B:
+- bounded binary/function extraction helpers
+- control-flow graph summarization helpers
+- symbolik path summarization helpers
+- prompt/schema bundles for structured analysis tasks
+
+Still not yet implemented:
 - GUI widgets/docks
+- full MCP server surface
+- write-back / mutation workflows beyond configuration scaffolding
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 
 ## Development setup

@@ -7,7 +7,7 @@ can migrate in-tree later if that becomes desirable.
 
 
 def vivExtension(vw, vwgui):
-    vw.vprint('viv_ai Phase A loaded (standalone package skeleton only)')
+    vw.vprint('viv_ai Phase B core loaded (standalone package)')
     return {'name': 'viv_ai', 'vwgui_present': vwgui is not None}
 
 

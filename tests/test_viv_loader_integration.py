@@ -27,4 +27,4 @@ class VivisectLoaderIntegrationTests(unittest.TestCase):
         vext.loadExtensions(FakeVW(), None)
 
         self.assertIn('viv_ai', exts)
-        self.assertTrue(any('viv_ai Phase A loaded' in e for e in events))
+        self.assertTrue(any('viv_ai Phase B core loaded' in e for e in events))

@@ -23,7 +23,7 @@ class PhaseAPluginLoadingTests(unittest.TestCase):
 
         self.assertTrue(callable(module.vivExtension))
         self.assertEqual(result['name'], 'viv_ai')
-        self.assertIn('Phase A loaded', events[-1])
+        self.assertIn('Phase B core loaded', events[-1])
 
     def test_top_level_runtime_import_and_plugin_wrapper_share_entrypoint(self):
         plugin_root = pathlib.Path(__file__).resolve().parents[1] / 'src'
