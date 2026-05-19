@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase F:
+Implemented through Phase G:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -27,11 +27,14 @@ Implemented through Phase F:
 - background job runner for non-blocking analysis execution
 - rendered result views for structured summaries, evidence, cache status, and errors
 - async workflow support for graph/function/binary analysis scheduling
+- MCP foundation modules for request/response schemas and workspace session management
+- minimal MCP server shell with tool registry and workspace lifecycle tools
+- initial read-only MCP metadata/binary-summary tool surface on the shared core
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
-- full MCP server surface
+- full MCP read-only inspection surface beyond metadata and binary-summary foundation tools
 - richer Qt-native widgets beyond the current workflow scaffold
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 
