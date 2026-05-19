@@ -4,6 +4,8 @@ from typing import Any, Optional
 
 from ..config import AiConfig
 from ..service import AnalysisService
+from .jobs import BackgroundJobRunner
+from .render import render_analysis_result
 from .review import ReviewApplyPanel
 from .settings import SettingsController
 
@@ -17,7 +19,7 @@ except Exception:  # pragma: no cover - optional during headless tests
 
 
 class AIHelperPanel:
-    def __init__(self, vw: Any, vwgui: Any, service: Optional[Any] = None, config: Optional[AiConfig] = None):
+    def __init__(self, vw: Any, vwgui: Any, service: Optional[Any] = None, config: Optional[AiConfig] = None, job_runner: Optional[BackgroundJobRunner] = None):
         self.vw = vw
         self.vwgui = vwgui
         self.config = config or AiConfig()
@@ -25,8 +27,11 @@ class AIHelperPanel:
         self.service = service or AnalysisService(self.config)
         self.scope = 'function'
         self.history = []
+        self.job_history = []
         self.last_result = None
+        self.last_rendered_result = ''
         self.review_panel = ReviewApplyPanel(vw, mutation_policy=self.config.mutation_policy)
+        self.job_runner = job_runner or BackgroundJobRunner()
 
     def apply_config(self, config: AiConfig) -> None:
         self.config = config
@@ -48,6 +53,31 @@ class AIHelperPanel:
             'provider': dict(result.get('provider') or {}),
         }
         self.history.append(entry)
+        self.job_history.append(entry)
+
+    def _handle_success_result(self, result, target_va: Optional[int] = None):
+        self.last_result = result
+        self.last_rendered_result = render_analysis_result(result)
+        self._record_history(result)
+        analysis = result.get('analysis', {})
+        if target_va is not None:
+            self.review_panel.stage_suggestions(
+                target_va,
+                proposed_name=analysis.get('proposed_name'),
+                proposed_comment=analysis.get('proposed_comment'),
+            )
+        return result
+
+    def _handle_error_result(self, task_type: str, error: str, va: Optional[int] = None):
+        result = {'error': error, 'task_type': task_type}
+        if va is not None:
+            result['va'] = f'0x{va:08x}'
+        self.last_result = result
+        self.last_rendered_result = render_analysis_result(result)
+        return result
+
+    def render_last_result(self) -> str:
+        return self.last_rendered_result
 
     def explain_current_function(self):
         current = getattr(self.vw, 'current_function', None)
@@ -57,22 +87,12 @@ class AIHelperPanel:
 
     def explain_function(self, fva: int, options: Optional[dict] = None):
         if self._uses_default_service and self.config.providers.get(self.config.default_provider) is None:
-            self.last_result = {'error': f'unknown provider: {self.config.default_provider}', 'task_type': 'function_summary', 'va': f'0x{fva:08x}'}
-            return self.last_result
+            return self._handle_error_result('function_summary', f'unknown provider: {self.config.default_provider}', va=fva)
         try:
             result = self.service.analyze_function(self.vw, fva, options=options)
         except Exception as exc:
-            self.last_result = {'error': str(exc), 'task_type': 'function_summary', 'va': f'0x{fva:08x}'}
-            return self.last_result
-        self.last_result = result
-        self._record_history(result)
-        analysis = result.get('analysis', {})
-        self.review_panel.stage_suggestions(
-            fva,
-            proposed_name=analysis.get('proposed_name'),
-            proposed_comment=analysis.get('proposed_comment'),
-        )
-        return result
+            return self._handle_error_result('function_summary', str(exc), va=fva)
+        return self._handle_success_result(result, target_va=fva)
 
     def run_current_analysis(self, options: Optional[dict] = None):
         options = dict(options or {})
@@ -91,11 +111,43 @@ class AIHelperPanel:
                     raise ValueError('no current function available')
                 return self.explain_function(current, options=options)
         except Exception as exc:
-            self.last_result = {'error': str(exc), 'task_type': f'{self.scope}_summary'}
-            return self.last_result
-        self.last_result = result
-        self._record_history(result)
-        return result
+            return self._handle_error_result(f'{self.scope}_summary', str(exc))
+        return self._handle_success_result(result)
+
+    def schedule_current_analysis(self, options: Optional[dict] = None):
+        options = dict(options or {})
+        current = getattr(self.vw, 'current_function', None)
+        scope = self.scope
+
+        def job_fn(update):
+            update(10, 'extracting context')
+            if scope == 'binary':
+                update(70, 'waiting on provider')
+                return self.service.analyze_binary(self.vw, options=options)
+            if scope == 'graph':
+                if current is None:
+                    raise ValueError('no current function available')
+                graph = self.vw.getFunctionGraph(current)
+                update(70, 'waiting on provider')
+                return self.service.analyze_graph(graph, options=options)
+            if current is None:
+                raise ValueError('no current function available')
+            update(70, 'waiting on provider')
+            return self.service.analyze_function(self.vw, current, options=options)
+
+        task_type = f'{scope}_summary'
+        metadata = {'target_va': current} if scope == 'function' else {}
+        return self.job_runner.submit(task_type, job_fn, metadata=metadata)
+
+    def run_pending_jobs(self):
+        snapshots = self.job_runner.run_pending()
+        for snapshot in snapshots:
+            if snapshot['status'] == 'completed':
+                target_va = (snapshot.get('metadata') or {}).get('target_va') if snapshot.get('task_type') == 'function_summary' else None
+                self._handle_success_result(snapshot['result'], target_va=target_va)
+            elif snapshot['status'] == 'failed':
+                self._handle_error_result(snapshot.get('task_type', 'unknown'), snapshot.get('error', 'unknown error'))
+        return snapshots
 
 
 if QtWidgets is not None:
@@ -106,7 +158,7 @@ if QtWidgets is not None:
             self.settings_controller = settings_controller
             self.setWindowTitle('Viv-AI Helper')
 else:
-    class AIHelperDockWidget:  # pragma: no cover - only used in headless tests
+    class AIHelperDockWidget:
         def __init__(self, controller: AIHelperPanel, settings_controller: Optional[SettingsController] = None):
             self.controller = controller
             self.settings_controller = settings_controller

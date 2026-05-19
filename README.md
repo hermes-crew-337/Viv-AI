@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase E:
+Implemented through Phase F:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -24,12 +24,15 @@ Implemented through Phase E:
 - workflow-oriented panel state with scope switching and analysis history
 - review queue support for multi-item staged suggestions
 - settings update controller for UI-driven config changes
+- background job runner for non-blocking analysis execution
+- rendered result views for structured summaries, evidence, cache status, and errors
+- async workflow support for graph/function/binary analysis scheduling
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
 - full MCP server surface
-- richer Qt-native widgets and async job handling beyond the current workflow scaffold
+- richer Qt-native widgets beyond the current workflow scaffold
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 
 ## Development setup
