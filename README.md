@@ -13,18 +13,20 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase C:
+Implemented through Phase D:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
 - prompt/schema bundles for structured analysis tasks
 - analysis service orchestration with cache + redaction
 - safe write-back helpers for rename/comment suggestions with policy enforcement
+- Vivisect plugin entrypoint that installs a base AI Helper panel/dock
+- context-menu entry generation for function explanation
+- staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
-- GUI widgets/docks
 - full MCP server surface
-- GUI-driven review/apply flows and richer mutation workflows
+- richer Qt-native widgets, async job handling, and expanded GUI workflows
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 
 ## Development setup
