@@ -32,6 +32,7 @@ class ReviewAndSettingsTests(unittest.TestCase):
         self.assertFalse(result['applied'])
         self.assertEqual(vw.names, {})
         self.assertEqual(vw.comments, {})
+        self.assertEqual(panel.current_target_va, 0x401000)
 
     def test_review_panel_applies_staged_suggestions_in_direct_mode(self):
         from viv_ai.models import MutationPolicy

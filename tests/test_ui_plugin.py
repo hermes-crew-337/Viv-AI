@@ -102,6 +102,7 @@ class GuiPluginTests(unittest.TestCase):
         self.assertTrue(result['vwgui_present'])
         self.assertEqual(len(vwgui.docks), 1)
         self.assertTrue(hasattr(vwgui.docks[0].widget, 'controller'))
+        self.assertTrue(hasattr(vwgui.docks[0].widget, 'settings_controller'))
         self.assertTrue(any(path == '&Tools.&AI Helper.&Show Panel' for path, _, _ in vwgui.menu_fields))
         self.assertIn('viv_ai', vw.ctx_hooks)
         self.assertTrue(any('Phase D GUI loaded' in event for event in vw.events))

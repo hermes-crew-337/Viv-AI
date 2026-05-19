@@ -5,6 +5,7 @@ from typing import Any, Optional
 from ..config import AiConfig
 from ..service import AnalysisService
 from .review import ReviewApplyPanel
+from .settings import SettingsController
 
 try:
     from PyQt6 import QtWidgets
@@ -22,8 +23,31 @@ class AIHelperPanel:
         self.config = config or AiConfig()
         self._uses_default_service = service is None
         self.service = service or AnalysisService(self.config)
+        self.scope = 'function'
+        self.history = []
         self.last_result = None
         self.review_panel = ReviewApplyPanel(vw, mutation_policy=self.config.mutation_policy)
+
+    def apply_config(self, config: AiConfig) -> None:
+        self.config = config
+        self.review_panel.mutation_policy = config.mutation_policy
+        if self._uses_default_service:
+            self.service = AnalysisService(self.config)
+
+    def set_scope(self, scope: str) -> None:
+        self.scope = scope
+
+    def _record_history(self, result):
+        status = 'cache hit' if result.get('cache_hit') else 'fresh'
+        entry = {
+            'scope': self.scope,
+            'task_type': result.get('task_type'),
+            'cache_hit': bool(result.get('cache_hit')),
+            'status': status,
+            'summary': result.get('analysis', {}).get('summary', ''),
+            'provider': dict(result.get('provider') or {}),
+        }
+        self.history.append(entry)
 
     def explain_current_function(self):
         current = getattr(self.vw, 'current_function', None)
@@ -41,6 +65,7 @@ class AIHelperPanel:
             self.last_result = {'error': str(exc), 'task_type': 'function_summary', 'va': f'0x{fva:08x}'}
             return self.last_result
         self.last_result = result
+        self._record_history(result)
         analysis = result.get('analysis', {})
         self.review_panel.stage_suggestions(
             fva,
@@ -49,17 +74,42 @@ class AIHelperPanel:
         )
         return result
 
+    def run_current_analysis(self, options: Optional[dict] = None):
+        options = dict(options or {})
+        try:
+            if self.scope == 'binary':
+                result = self.service.analyze_binary(self.vw, options=options)
+            elif self.scope == 'graph':
+                current = getattr(self.vw, 'current_function', None)
+                if current is None:
+                    raise ValueError('no current function available')
+                graph = self.vw.getFunctionGraph(current)
+                result = self.service.analyze_graph(graph, options=options)
+            else:
+                current = getattr(self.vw, 'current_function', None)
+                if current is None:
+                    raise ValueError('no current function available')
+                return self.explain_function(current, options=options)
+        except Exception as exc:
+            self.last_result = {'error': str(exc), 'task_type': f'{self.scope}_summary'}
+            return self.last_result
+        self.last_result = result
+        self._record_history(result)
+        return result
+
 
 if QtWidgets is not None:
     class AIHelperDockWidget(QtWidgets.QWidget):
-        def __init__(self, controller: AIHelperPanel):
+        def __init__(self, controller: AIHelperPanel, settings_controller: Optional[SettingsController] = None):
             super().__init__()
             self.controller = controller
+            self.settings_controller = settings_controller
             self.setWindowTitle('Viv-AI Helper')
 else:
     class AIHelperDockWidget:  # pragma: no cover - only used in headless tests
-        def __init__(self, controller: AIHelperPanel):
+        def __init__(self, controller: AIHelperPanel, settings_controller: Optional[SettingsController] = None):
             self.controller = controller
+            self.settings_controller = settings_controller
             self._window_title = 'Viv-AI Helper'
 
         def windowTitle(self):
@@ -93,7 +143,9 @@ def _ctx_menu_hook(vw, va=None, expr=None, menu=None, parent=None, nav=None, tag
 
 def install_gui(vw: Any, vwgui: Any, service: Optional[Any] = None, config: Optional[AiConfig] = None):
     panel = AIHelperPanel(vw, vwgui, service=service, config=config)
-    widget = AIHelperDockWidget(panel)
+    settings_controller = SettingsController(panel.config)
+    settings_controller.bind_panel(panel)
+    widget = AIHelperDockWidget(panel, settings_controller=settings_controller)
     dock = vwgui.vqDockWidget(widget, floating=False)
     if hasattr(dock, 'resize'):
         dock.resize(480, 360)
