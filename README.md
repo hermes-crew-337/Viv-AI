@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase L:
+Implemented through Phase M:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -40,12 +40,13 @@ Implemented through Phase L:
 - explicit opt-in MCP apply tools with read-only/review policy enforcement and structured audit-friendly results
 - MCP tool-call concurrency and timeout caps with structured errors
 - local-only provider policy enforcement for AI-backed analysis paths
+- packaged stdio MCP entrypoint module and `viv-ai-mcp` launcher script
 - initial MCP client usage/examples documentation
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
-- richer MCP auth/transport packaging beyond the current in-process server surface
+- richer HTTP/auth MCP transport packaging beyond the current stdio server surface
 - richer Qt-native widgets beyond the current workflow scaffold
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 

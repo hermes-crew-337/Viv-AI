@@ -26,6 +26,9 @@ dev = [
   "pytest>=8,<9",
 ]
 
+[project.scripts]
+viv-ai-mcp = "viv_ai.mcp.entrypoint:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

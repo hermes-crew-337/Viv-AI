@@ -12,7 +12,27 @@ Current operational defaults:
 
 ## Hermes Agent client example
 
-Current status: this repo exposes the in-process `VivAIMcpServer` class and tool registry, but it does not yet ship a packaged stdio MCP entrypoint module. For Hermes, Claude Desktop, or another MCP client, wrap the server with your own launcher until a transport entrypoint lands.
+Launch the packaged stdio entrypoint:
+
+```yaml
+mcp_servers:
+  viv_ai:
+    command: "viv-ai-mcp"
+    args: []
+    timeout: 60
+    connect_timeout: 30
+```
+
+You can also run it directly without the installed console script:
+
+```yaml
+mcp_servers:
+  viv_ai:
+    command: "python"
+    args: ["-m", "viv_ai.mcp.entrypoint"]
+    timeout: 60
+    connect_timeout: 30
+```
 
 Example prompts once connected:
 - open `/tmp/a.out` in the Viv-AI MCP server and summarize the binary
@@ -22,11 +42,45 @@ Example prompts once connected:
 
 ## Claude Desktop / generic stdio MCP shape
 
-When you add your own stdio transport wrapper, point your MCP client config at that wrapper command. The exact JSON/YAML shape depends on the client, but the workflow below stays the same once the server is reachable.
+Point the client at the installed launcher or Python module:
+
+```json
+{
+  "mcpServers": {
+    "viv-ai": {
+      "command": "viv-ai-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Equivalent direct-module form:
+
+```json
+{
+  "mcpServers": {
+    "viv-ai": {
+      "command": "python",
+      "args": ["-m", "viv_ai.mcp.entrypoint"]
+    }
+  }
+}
+```
 
 ## OpenAI-compatible client shape
 
-For OpenAI-compatible agent stacks that can call MCP tools, expose the same wrapped server over the transport shape they expect, then use the tool workflows below.
+For OpenAI-compatible agent stacks that can call MCP tools, expose the same stdio entrypoint over the transport shape they expect, for example:
+
+```json
+{
+  "type": "stdio",
+  "command": "viv-ai-mcp",
+  "args": []
+}
+```
+
+Then use the tool workflows below.
 
 ## Example workflow
 
