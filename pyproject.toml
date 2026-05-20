@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 viv-ai-mcp = "viv_ai.mcp.entrypoint:main"
+viv-ai-mcp-http = "viv_ai.mcp.http_transport:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -10,6 +10,7 @@ Current operational defaults:
 - per-tool timeout cap
 - local-only provider policy by default for AI-backed tools
 - tool discovery includes per-tool input schemas and read-only hints for MCP clients
+- optional HTTP transport uses bearer auth via an env-var reference, not an in-config raw secret
 
 ## Hermes Agent client example
 
@@ -40,6 +41,24 @@ Example prompts once connected:
 - explain function `0x401000`
 - show the bounded graph for function `0x401000`
 - propose a rename for function `0x401000` to `decrypt_payload`
+
+## HTTP transport example
+
+Optional HTTP transport is also available:
+
+```bash
+export VIV_AI_MCP_TOKEN=replace-me
+viv-ai-mcp-http --host 127.0.0.1 --port 8765 --auth-token-env VIV_AI_MCP_TOKEN
+```
+
+Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with:
+
+```http
+Authorization: Bearer replace-me
+Content-Type: application/json
+```
+
+`GET /healthz` returns a lightweight health/transport summary without exposing the token value.
 
 ## Claude Desktop / generic stdio MCP shape
 

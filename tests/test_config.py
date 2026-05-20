@@ -47,9 +47,15 @@ class PhaseAConfigTests(unittest.TestCase):
         cfg = AiConfig.from_dict({
             'mcp_max_concurrent_tools': 3,
             'mcp_max_tool_seconds': 17,
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 8765,
+            'mcp_http_auth_token_env': 'VIV_AI_MCP_TOKEN',
         })
 
         clone = AiConfig.from_dict(cfg.to_dict())
 
         self.assertEqual(clone.mcp_max_concurrent_tools, 3)
         self.assertEqual(clone.mcp_max_tool_seconds, 17)
+        self.assertEqual(clone.mcp_http_bind_host, '127.0.0.1')
+        self.assertEqual(clone.mcp_http_bind_port, 8765)
+        self.assertEqual(clone.mcp_http_auth_token_env, 'VIV_AI_MCP_TOKEN')

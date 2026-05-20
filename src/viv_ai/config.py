@@ -16,6 +16,9 @@ class AiConfig:
     mutation_policy: MutationPolicy = MutationPolicy.CONSERVATIVE_READONLY
     mcp_max_concurrent_tools: int = 4
     mcp_max_tool_seconds: int = 30
+    mcp_http_bind_host: str = '127.0.0.1'
+    mcp_http_bind_port: int = 0
+    mcp_http_auth_token_env: Optional[str] = None
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -27,6 +30,9 @@ class AiConfig:
             'mutation_policy': self.mutation_policy.value,
             'mcp_max_concurrent_tools': self.mcp_max_concurrent_tools,
             'mcp_max_tool_seconds': self.mcp_max_tool_seconds,
+            'mcp_http_bind_host': self.mcp_http_bind_host,
+            'mcp_http_bind_port': self.mcp_http_bind_port,
+            'mcp_http_auth_token_env': self.mcp_http_auth_token_env,
             'providers': {name: cfg.to_dict() for name, cfg in self.providers.items()},
         }
 
@@ -51,6 +57,9 @@ class AiConfig:
             mutation_policy=policy,
             mcp_max_concurrent_tools=int(data.get('mcp_max_concurrent_tools', 4)),
             mcp_max_tool_seconds=int(data.get('mcp_max_tool_seconds', 30)),
+            mcp_http_bind_host=str(data.get('mcp_http_bind_host', '127.0.0.1')),
+            mcp_http_bind_port=int(data.get('mcp_http_bind_port', 0)),
+            mcp_http_auth_token_env=data.get('mcp_http_auth_token_env'),
             providers=providers,
         )
 
