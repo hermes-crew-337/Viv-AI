@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from ..extractors import extract_binary_overview
+from ..extractors import extract_binary_overview, extract_function_overview
+from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
 from .session import WorkspaceSessionManager
 
@@ -68,6 +69,49 @@ def get_binary_summary(manager: WorkspaceSessionManager, workspace_id: str, **kw
     ).to_dict()
 
 
+def get_strings(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_strings(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'strings': items, 'truncated': truncated}, provenance={'tool': 'get_strings'}, summary=f'{len(items)} strings returned').to_dict()
+
+
+def get_imports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_imports(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'imports': items, 'truncated': truncated}, provenance={'tool': 'get_imports'}, summary=f'{len(items)} imports returned').to_dict()
+
+
+def get_exports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_exports(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'exports': items, 'truncated': truncated}, provenance={'tool': 'get_exports'}, summary=f'{len(items)} exports returned').to_dict()
+
+
+def get_names(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_names(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'names': items, 'truncated': truncated}, provenance={'tool': 'get_names'}, summary=f'{len(items)} names returned').to_dict()
+
+
+def get_xrefs_to(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_xrefs(workspace, parse_va(va), 'to'), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': items, 'truncated': truncated}, provenance={'tool': 'get_xrefs_to'}, summary=f'{len(items)} xrefs-to returned').to_dict()
+
+
+def get_xrefs_from(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    items, truncated = bounded(collect_xrefs(workspace, parse_va(va), 'from'), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': items, 'truncated': truncated}, provenance={'tool': 'get_xrefs_from'}, summary=f'{len(items)} xrefs-from returned').to_dict()
+
+
+def get_function_summary(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    summary = extract_function_overview(workspace, parse_va(fva), **kwargs)
+    name = summary.get('function', {}).get('name') or summary.get('function', {}).get('va')
+    return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_function_summary'}, summary=f'function summary ready for {name}').to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -75,4 +119,11 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'workspace_close': workspace_close,
         'get_metadata': get_metadata,
         'get_binary_summary': get_binary_summary,
+        'get_strings': get_strings,
+        'get_imports': get_imports,
+        'get_exports': get_exports,
+        'get_names': get_names,
+        'get_xrefs_to': get_xrefs_to,
+        'get_xrefs_from': get_xrefs_from,
+        'get_function_summary': get_function_summary,
     }
