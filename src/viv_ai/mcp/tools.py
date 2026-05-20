@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 
 from ..extractors import extract_binary_overview, extract_function_overview
+from ..graphs import summarize_graph
+from ..symbolik import summarize_symbolik_paths
 from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
 from .session import WorkspaceSessionManager
@@ -112,6 +114,23 @@ def get_function_summary(manager: WorkspaceSessionManager, workspace_id: str, fv
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_function_summary'}, summary=f'function summary ready for {name}').to_dict()
 
 
+def get_function_graph(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, max_nodes: int = 64, max_edges: int = 96, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    graph = workspace.getFunctionGraph(parse_va(fva))
+    summary = summarize_graph(graph, max_nodes=max_nodes, max_edges=max_edges)
+    return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_function_graph'}, summary='function graph ready').to_dict()
+
+
+def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, max_paths: int = 8, max_constraints: int = 8, max_effects: int = 8, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    getter = getattr(workspace, 'getSymbolikPaths', None)
+    if getter is None:
+        raise RuntimeError('symbolik path provider is unavailable')
+    paths = getter(parse_va(fva))
+    summary = summarize_symbolik_paths(paths, max_paths=max_paths, max_constraints=max_constraints, max_effects=max_effects)
+    return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_symbolik_summary'}, summary='symbolik summary ready').to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -126,4 +145,6 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_xrefs_to': get_xrefs_to,
         'get_xrefs_from': get_xrefs_from,
         'get_function_summary': get_function_summary,
+        'get_function_graph': get_function_graph,
+        'get_symbolik_summary': get_symbolik_summary,
     }

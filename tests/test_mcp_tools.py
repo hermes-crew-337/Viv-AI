@@ -49,6 +49,22 @@ class FakeVW:
         }
         self.exports = [(0x402000, 'FUNC', 'helper', 'sample.bin')]
         self.imports = [self.locations[0x5000], self.locations[0x5008]]
+        self.symbolik_paths = {
+            0x401000: [
+                {
+                    'path_id': 'p0',
+                    'constraints': ['eax == 1', 'ebx != 0'],
+                    'effects': ['calls helper', 'writes flag'],
+                    'return_relation': 'returns eax',
+                },
+                {
+                    'path_id': 'p1',
+                    'constraints': ['eax == 2'],
+                    'effects': ['returns early'],
+                    'return_relation': 'returns 0',
+                },
+            ]
+        }
 
     def getMeta(self, name):
         return self.meta.get(name)
@@ -112,6 +128,9 @@ class FakeVW:
     def getFunctionApi(self, fva):
         return None
 
+    def getSymbolikPaths(self, fva):
+        return list(self.symbolik_paths.get(fva, []))
+
 
 class McpInspectionToolTests(unittest.TestCase):
     def _server(self):
@@ -133,6 +152,8 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertIn('get_xrefs_to', registry)
         self.assertIn('get_xrefs_from', registry)
         self.assertIn('get_function_summary', registry)
+        self.assertIn('get_function_graph', registry)
+        self.assertIn('get_symbolik_summary', registry)
 
     def test_get_strings_is_bounded_and_reports_truncation(self):
         server = self._server()
@@ -180,6 +201,39 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertEqual(result['data']['callers'], ['0x00400100'])
         self.assertEqual(result['data']['truncated']['import_refs'], 1)
         self.assertIn('main', result['summary'])
+
+    def test_get_function_graph_returns_bounded_graph_summary(self):
+        server = self._server()
+        workspace_id = self._open(server)
+
+        result = server.call_tool('get_function_graph', workspace_id=workspace_id, fva='0x401000', max_nodes=1, max_edges=1)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['node_count'], 2)
+        self.assertEqual(len(result['data']['nodes']), 1)
+        self.assertEqual(result['data']['truncated']['nodes'], 1)
+        self.assertIn('graph', result['summary'])
+
+    def test_get_symbolik_summary_returns_bounded_path_summary(self):
+        server = self._server()
+        workspace_id = self._open(server)
+
+        result = server.call_tool(
+            'get_symbolik_summary',
+            workspace_id=workspace_id,
+            fva='0x401000',
+            max_paths=1,
+            max_constraints=1,
+            max_effects=1,
+        )
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['data']['path_count'], 2)
+        self.assertEqual(len(result['data']['paths']), 1)
+        self.assertEqual(result['data']['paths'][0]['constraints'], ['eax == 1'])
+        self.assertEqual(result['data']['paths'][0]['truncated']['effects'], 1)
+        self.assertEqual(result['data']['truncated']['paths'], 1)
+        self.assertIn('symbolik', result['summary'])
 
 
 if __name__ == '__main__':
