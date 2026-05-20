@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase J:
+Implemented through Phase K:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -36,11 +36,13 @@ Implemented through Phase J:
 - MCP symbolik-summary tool reusing the shared bounded path summarizer
 - AI-backed MCP function explanation tool reusing the shared AnalysisService
 - AI-backed MCP binary summarization tool reusing the shared AnalysisService
+- MCP mutation proposal tools for function renames and comments
+- explicit opt-in MCP apply tools with read-only/review policy enforcement and structured audit-friendly results
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
-- mutation/proposal MCP workflows beyond the current read-only + AI-summary tool surface
+- richer MCP security/operational controls beyond the current mutation-policy gate
 - richer Qt-native widgets beyond the current workflow scaffold
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 

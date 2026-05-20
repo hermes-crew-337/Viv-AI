@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
+from ..apply import apply_comment_suggestion as _apply_comment_suggestion, apply_function_rename as _apply_function_rename
 from ..extractors import extract_binary_overview, extract_function_overview
 from ..graphs import summarize_graph
 from ..symbolik import summarize_symbolik_paths
 from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
+from .security import assert_apply_allowed
 from .session import WorkspaceSessionManager
 
 
@@ -23,6 +25,19 @@ def _analysis_service(manager: WorkspaceSessionManager) -> Any:
 def _options_from_kwargs(kwargs: Dict[str, Any], *excluded: str) -> Dict[str, Any]:
     excluded_keys = set(excluded)
     return {key: value for key, value in kwargs.items() if key not in excluded_keys}
+
+
+def _proposal(applied: bool, kind: str, va: int, field_name: str, field_value: str, reason: str) -> Dict[str, Any]:
+    payload = {
+        'applied': applied,
+        'reason': reason,
+        'proposal': {
+            'kind': kind,
+            'va': f'0x{va:08x}',
+            field_name: field_value,
+        },
+    }
+    return payload
 
 
 def workspace_open(manager: WorkspaceSessionManager, path: str, workspace: Any = None, **kwargs) -> Dict[str, Any]:
@@ -157,6 +172,36 @@ def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **k
     return ToolResponse.ok(workspace_id, 'binary', result, provenance={'tool': 'ai_summarize_binary'}, summary=summary).to_dict()
 
 
+def propose_function_rename(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, new_name: str, **kwargs) -> Dict[str, Any]:
+    proposal = _proposal(False, 'function_rename', parse_va(fva), 'name', new_name, 'proposal only')
+    return ToolResponse.ok(workspace_id, 'function', proposal, provenance={'tool': 'propose_function_rename', 'mutation_policy': manager.mutation_policy.value}, summary=f'proposed rename to {new_name}').to_dict()
+
+
+def propose_comment(manager: WorkspaceSessionManager, workspace_id: str, va: Any, comment: str, **kwargs) -> Dict[str, Any]:
+    proposal = _proposal(False, 'comment', parse_va(va), 'comment', comment, 'proposal only')
+    return ToolResponse.ok(workspace_id, 'address', proposal, provenance={'tool': 'propose_comment', 'mutation_policy': manager.mutation_policy.value}, summary='proposed comment').to_dict()
+
+
+def apply_function_rename(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, new_name: str, **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    assert_apply_allowed(policy)
+    workspace = manager.get_workspace(workspace_id)
+    result = _apply_function_rename(workspace, parse_va(fva), new_name, policy)
+    if not result.get('applied'):
+        return ToolResponse.error_response(workspace_id, 'function', result.get('reason', 'failed to apply function rename'), provenance={'tool': 'apply_function_rename', 'mutation_policy': policy.value}, warnings=[]).to_dict() | {'data': result}
+    return ToolResponse.ok(workspace_id, 'function', result, provenance={'tool': 'apply_function_rename', 'mutation_policy': policy.value}, summary='function rename applied').to_dict()
+
+
+def apply_comment(manager: WorkspaceSessionManager, workspace_id: str, va: Any, comment: str, **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    assert_apply_allowed(policy)
+    workspace = manager.get_workspace(workspace_id)
+    result = _apply_comment_suggestion(workspace, parse_va(va), comment, policy)
+    if not result.get('applied'):
+        return ToolResponse.error_response(workspace_id, 'address', result.get('reason', 'failed to apply comment'), provenance={'tool': 'apply_comment', 'mutation_policy': policy.value}, warnings=[]).to_dict() | {'data': result}
+    return ToolResponse.ok(workspace_id, 'address', result, provenance={'tool': 'apply_comment', 'mutation_policy': policy.value}, summary='comment applied').to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -175,4 +220,8 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_symbolik_summary': get_symbolik_summary,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,
+        'propose_function_rename': propose_function_rename,
+        'propose_comment': propose_comment,
+        'apply_function_rename': apply_function_rename,
+        'apply_comment': apply_comment,
     }
