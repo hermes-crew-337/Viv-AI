@@ -25,10 +25,11 @@ class WorkspaceSession:
 
 
 class WorkspaceSessionManager:
-    def __init__(self, workspace_loader=None):
+    def __init__(self, workspace_loader=None, analysis_service=None):
         self._sessions: Dict[str, WorkspaceSession] = {}
         self._path_index: Dict[str, str] = {}
         self.workspace_loader = workspace_loader
+        self.analysis_service = analysis_service
 
     def _make_workspace_id(self, path: str) -> str:
         return sha256(path.encode('utf-8')).hexdigest()[:12]

@@ -13,6 +13,18 @@ from .session import WorkspaceSessionManager
 ToolFn = Callable[..., Dict[str, Any]]
 
 
+def _analysis_service(manager: WorkspaceSessionManager) -> Any:
+    service = getattr(manager, 'analysis_service', None)
+    if service is None:
+        raise RuntimeError('analysis service is not configured')
+    return service
+
+
+def _options_from_kwargs(kwargs: Dict[str, Any], *excluded: str) -> Dict[str, Any]:
+    excluded_keys = set(excluded)
+    return {key: value for key, value in kwargs.items() if key not in excluded_keys}
+
+
 def workspace_open(manager: WorkspaceSessionManager, path: str, workspace: Any = None, **kwargs) -> Dict[str, Any]:
     session = manager.open_workspace(path, workspace=workspace)
     return ToolResponse.ok(
@@ -131,6 +143,20 @@ def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fv
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_symbolik_summary'}, summary='symbolik summary ready').to_dict()
 
 
+def ai_explain_function(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    result = _analysis_service(manager).analyze_function(workspace, parse_va(fva), options=_options_from_kwargs(kwargs))
+    summary = result.get('analysis', {}).get('summary', 'function explanation ready')
+    return ToolResponse.ok(workspace_id, 'function', result, provenance={'tool': 'ai_explain_function'}, summary=summary).to_dict()
+
+
+def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    result = _analysis_service(manager).analyze_binary(workspace, options=_options_from_kwargs(kwargs))
+    summary = result.get('analysis', {}).get('summary', 'binary summary ready')
+    return ToolResponse.ok(workspace_id, 'binary', result, provenance={'tool': 'ai_summarize_binary'}, summary=summary).to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -147,4 +173,6 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_function_summary': get_function_summary,
         'get_function_graph': get_function_graph,
         'get_symbolik_summary': get_symbolik_summary,
+        'ai_explain_function': ai_explain_function,
+        'ai_summarize_binary': ai_summarize_binary,
     }

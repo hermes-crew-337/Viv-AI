@@ -8,8 +8,10 @@ from .tools import build_default_registry
 
 
 class VivAIMcpServer:
-    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None):
-        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader)
+    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None):
+        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service)
+        if session_manager is not None and analysis_service is not None:
+            self.session_manager.analysis_service = analysis_service
         self.tool_registry = dict(tool_registry or build_default_registry())
         self.running = False
 
