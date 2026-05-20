@@ -14,6 +14,8 @@ class AiConfig:
     local_only: bool = True
     remote_providers_enabled: bool = False
     mutation_policy: MutationPolicy = MutationPolicy.CONSERVATIVE_READONLY
+    mcp_max_concurrent_tools: int = 4
+    mcp_max_tool_seconds: int = 30
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -23,6 +25,8 @@ class AiConfig:
             'local_only': self.local_only,
             'remote_providers_enabled': self.remote_providers_enabled,
             'mutation_policy': self.mutation_policy.value,
+            'mcp_max_concurrent_tools': self.mcp_max_concurrent_tools,
+            'mcp_max_tool_seconds': self.mcp_max_tool_seconds,
             'providers': {name: cfg.to_dict() for name, cfg in self.providers.items()},
         }
 
@@ -45,6 +49,8 @@ class AiConfig:
             local_only=bool(data.get('local_only', True)),
             remote_providers_enabled=bool(data.get('remote_providers_enabled', False)),
             mutation_policy=policy,
+            mcp_max_concurrent_tools=int(data.get('mcp_max_concurrent_tools', 4)),
+            mcp_max_tool_seconds=int(data.get('mcp_max_tool_seconds', 30)),
             providers=providers,
         )
 

@@ -2,6 +2,11 @@ import unittest
 
 
 class FakeProvider:
+    class Capabilities:
+        local_only = True
+
+    capabilities = Capabilities()
+
     def __init__(self):
         self.calls = []
 
@@ -23,6 +28,13 @@ class FakeProvider:
 class ErrorProvider:
     def complete_structured(self, task_type, system_prompt, user_payload, schema, options=None):
         raise RuntimeError('provider exploded')
+
+
+class RemoteCapableProvider(FakeProvider):
+    class Capabilities:
+        local_only = False
+
+    capabilities = Capabilities()
 
 
 class FakeWorkspace:
@@ -201,6 +213,29 @@ class AnalysisServiceTests(unittest.TestCase):
             service.analyze_binary(FakeWorkspace())
 
         self.assertIn('binary_summary', str(ctx.exception))
+
+    def test_service_blocks_remote_capable_provider_when_local_only_policy_enabled(self):
+        from viv_ai.config import AiConfig, ProviderConfig
+        from viv_ai.service import AnalysisError, AnalysisService
+
+        cfg = AiConfig(
+            default_provider='gemini',
+            local_only=True,
+            remote_providers_enabled=False,
+            providers={
+                'gemini': ProviderConfig(
+                    provider_type='gemini',
+                    model='gemini-test',
+                    endpoint='https://example.invalid',
+                )
+            },
+        )
+        service = AnalysisService(cfg, provider_factory=lambda cfg: RemoteCapableProvider())
+
+        with self.assertRaises(AnalysisError) as ctx:
+            service.analyze_binary(FakeWorkspace())
+
+        self.assertIn('local-only policy', str(ctx.exception))
 
 
 if __name__ == '__main__':

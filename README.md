@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase K:
+Implemented through Phase L:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -38,11 +38,14 @@ Implemented through Phase K:
 - AI-backed MCP binary summarization tool reusing the shared AnalysisService
 - MCP mutation proposal tools for function renames and comments
 - explicit opt-in MCP apply tools with read-only/review policy enforcement and structured audit-friendly results
+- MCP tool-call concurrency and timeout caps with structured errors
+- local-only provider policy enforcement for AI-backed analysis paths
+- initial MCP client usage/examples documentation
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller
 
 Still not yet implemented:
-- richer MCP security/operational controls beyond the current mutation-policy gate
+- richer MCP auth/transport packaging beyond the current in-process server surface
 - richer Qt-native widgets beyond the current workflow scaffold
 - remote-provider auth/runtime integrations beyond request-shape scaffolding
 
@@ -85,3 +88,7 @@ Point `VIV_EXT_PATH` at the directory containing the installed `viv_ai` package,
 ```bash
 export VIV_EXT_PATH=/path/to/Viv-AI/src
 ```
+
+## MCP docs
+
+- docs/mcp-client-usage.md

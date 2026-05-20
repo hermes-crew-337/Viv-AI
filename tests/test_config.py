@@ -40,3 +40,16 @@ class PhaseAConfigTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             AiConfig.from_dict({'mutation_policy': 'definitely-not-valid'})
+
+    def test_config_round_trip_preserves_mcp_operational_limits(self):
+        from viv_ai.config import AiConfig
+
+        cfg = AiConfig.from_dict({
+            'mcp_max_concurrent_tools': 3,
+            'mcp_max_tool_seconds': 17,
+        })
+
+        clone = AiConfig.from_dict(cfg.to_dict())
+
+        self.assertEqual(clone.mcp_max_concurrent_tools, 3)
+        self.assertEqual(clone.mcp_max_tool_seconds, 17)

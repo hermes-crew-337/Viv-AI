@@ -9,6 +9,7 @@ from .config import AiConfig
 from .models import ProviderConfig
 from .prompts import build_task_prompt_bundle
 from .redaction import redact_value
+from .mcp.security import assert_provider_allowed
 from .symbolik import summarize_symbolik_paths
 from .providers import create_provider
 
@@ -54,6 +55,7 @@ class AnalysisService:
             }
         try:
             provider = self.provider_factory(provider_cfg)
+            assert_provider_allowed(self.config, provider)
             analysis = provider.complete_structured(
                 task_type=task_type,
                 system_prompt=prompt['system_prompt'],
