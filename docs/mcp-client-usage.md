@@ -9,6 +9,7 @@ Current operational defaults:
 - tool-call concurrency cap
 - per-tool timeout cap
 - local-only provider policy by default for AI-backed tools
+- tool discovery includes per-tool input schemas and read-only hints for MCP clients
 
 ## Hermes Agent client example
 
@@ -126,6 +127,8 @@ Apply a rename when direct apply is enabled server-side:
 ## Notes
 
 - Tool outputs are intentionally bounded for LLM-friendly MCP use.
+- `tools/list` now exposes per-tool input schemas and read-only annotations for better client UX.
+- Invalid JSON and malformed `tools/call` argument shapes return structured JSON-RPC errors instead of crashing the server.
 - AI-backed tools depend on a server-side `AnalysisService`; clients never pass provider objects directly.
 - Remote-capable providers are blocked when local-only policy is enabled.
 - If a tool exceeds the configured time budget or concurrency cap, the server returns a structured error.

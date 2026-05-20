@@ -88,6 +88,18 @@ class McpServerTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertIn('unknown tool', result['error'])
 
+    def test_server_reports_tool_metadata_with_required_arguments(self):
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer()
+        info = server.server_info()
+        tools = info['tool_metadata']
+
+        self.assertEqual(tools['workspace_open']['inputSchema']['required'], ['path'])
+        self.assertIn('path', tools['workspace_open']['inputSchema']['properties'])
+        self.assertTrue(tools['get_metadata']['annotations']['readOnlyHint'])
+        self.assertFalse(tools['apply_function_rename']['annotations']['readOnlyHint'])
+
 
 if __name__ == '__main__':
     unittest.main()

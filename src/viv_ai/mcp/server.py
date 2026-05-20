@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 from .schemas import ToolResponse
 from .security import resolve_mutation_policy
 from .session import WorkspaceSessionError, WorkspaceSessionManager
-from .tools import build_default_registry
+from .tools import build_default_registry, build_tool_metadata
 
 
 class _ToolTimeout(RuntimeError):
@@ -54,6 +54,7 @@ class VivAIMcpServer:
         self._active_calls = 0
         self._call_lock = Lock()
         self.tool_registry = dict(tool_registry or build_default_registry())
+        self.tool_metadata = build_tool_metadata()
         self.running = False
 
     def _release_active_call(self) -> None:
@@ -65,6 +66,7 @@ class VivAIMcpServer:
             'name': 'viv_ai_mcp',
             'running': self.running,
             'tools': sorted(self.tool_registry.keys()),
+            'tool_metadata': {name: self.tool_metadata[name] for name in sorted(self.tool_registry.keys()) if name in self.tool_metadata},
             'limits': {
                 'max_concurrent_tools': self.max_concurrent_tools,
                 'max_tool_seconds': self.max_tool_seconds,

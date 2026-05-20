@@ -68,9 +68,13 @@ class McpEntrypointTests(unittest.TestCase):
 
         self.assertTrue(keep_running)
         self.assertEqual(list_resp['id'], 2)
-        tool_names = {tool['name'] for tool in list_resp['result']['tools']}
-        self.assertIn('workspace_open', tool_names)
-        self.assertIn('ai_explain_function', tool_names)
+        tools = {tool['name']: tool for tool in list_resp['result']['tools']}
+        self.assertIn('workspace_open', tools)
+        self.assertIn('ai_explain_function', tools)
+        self.assertEqual(tools['workspace_open']['inputSchema']['required'], ['path'])
+        self.assertIn('path', tools['workspace_open']['inputSchema']['properties'])
+        self.assertTrue(tools['get_metadata']['annotations']['readOnlyHint'])
+        self.assertFalse(tools['apply_function_rename']['annotations']['readOnlyHint'])
 
     def test_serve_once_handles_tool_call_and_shutdown(self):
         from viv_ai.mcp.entrypoint import serve_once
@@ -113,6 +117,35 @@ class McpEntrypointTests(unittest.TestCase):
 
         self.assertFalse(keep_running)
         self.assertIsNone(shutdown_resp['result'])
+
+    def test_serve_once_returns_parse_error_for_invalid_json(self):
+        from viv_ai.mcp.entrypoint import serve_once
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        bad_in = io.StringIO('{not json}\n')
+        bad_out = io.StringIO()
+
+        keep_running = serve_once(server, bad_in, bad_out)
+        response = json.loads(bad_out.getvalue())
+
+        self.assertTrue(keep_running)
+        self.assertEqual(response['error']['code'], -32700)
+
+    def test_serve_once_validates_tool_call_params_shape(self):
+        from viv_ai.mcp.entrypoint import serve_once
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        req = {'id': 7, 'method': 'tools/call', 'params': {'name': 'workspace_open', 'arguments': 'nope'}}
+        req_in = io.StringIO(json.dumps(req) + '\n')
+        req_out = io.StringIO()
+
+        keep_running = serve_once(server, req_in, req_out)
+        response = json.loads(req_out.getvalue())
+
+        self.assertTrue(keep_running)
+        self.assertEqual(response['error']['code'], -32602)
 
 
 if __name__ == '__main__':

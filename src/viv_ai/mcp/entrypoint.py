@@ -6,25 +6,30 @@ import sys
 from typing import Any, Dict, Iterable, Optional, TextIO
 
 from .server import VivAIMcpServer
+from .tools import build_tool_metadata
 
 
 _PROTOCOL_VERSION = '2026-03-26'
 
 
 def _tool_descriptors(server: VivAIMcpServer) -> list[Dict[str, Any]]:
+    metadata = build_tool_metadata()
     tools = []
     for name in sorted(server.tool_registry.keys()):
-        tools.append(
+        descriptor = dict(metadata.get(name, {}))
+        descriptor['name'] = name
+        descriptor.setdefault('description', f'Viv-AI MCP tool: {name}')
+        descriptor.setdefault(
+            'inputSchema',
             {
-                'name': name,
-                'description': f'Viv-AI MCP tool: {name}',
-                'inputSchema': {
-                    'type': 'object',
-                    'properties': {},
-                    'additionalProperties': True,
-                },
-            }
+                'type': 'object',
+                'properties': {},
+                'required': [],
+                'additionalProperties': True,
+            },
         )
+        descriptor.setdefault('annotations', {'readOnlyHint': False})
+        tools.append(descriptor)
     return tools
 
 
@@ -36,10 +41,23 @@ def _error_response(request_id: Any, code: int, message: str) -> Dict[str, Any]:
     return {'jsonrpc': '2.0', 'id': request_id, 'error': {'code': code, 'message': message}}
 
 
+def _parse_request(line: str) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
+    try:
+        request = json.loads(line)
+    except json.JSONDecodeError as exc:
+        return None, _error_response(None, -32700, f'parse error: {exc.msg}')
+    if not isinstance(request, dict):
+        return None, _error_response(None, -32600, 'invalid request: expected object')
+    return request, None
+
+
 def _handle_request(server: VivAIMcpServer, request: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     request_id = request.get('id')
     method = request.get('method')
-    params = dict(request.get('params') or {})
+    raw_params = request.get('params') or {}
+    if not isinstance(raw_params, dict):
+        return _error_response(request_id, -32602, 'invalid params: expected object'), True
+    params = dict(raw_params)
 
     if method == 'initialize':
         result = {
@@ -57,7 +75,10 @@ def _handle_request(server: VivAIMcpServer, request: Dict[str, Any]) -> tuple[Di
 
     if method == 'tools/call':
         name = params.get('name', '')
-        arguments = dict(params.get('arguments') or {})
+        raw_arguments = params.get('arguments') or {}
+        if not isinstance(raw_arguments, dict):
+            return _error_response(request_id, -32602, 'invalid params: arguments must be an object'), True
+        arguments = dict(raw_arguments)
         result = server.call_tool(name, **arguments)
         return _ok_response(request_id, result), True
 
@@ -75,7 +96,11 @@ def serve_once(server: VivAIMcpServer, instream: TextIO, outstream: TextIO) -> b
     line = instream.readline()
     if not line:
         return False
-    request = json.loads(line)
+    request, error = _parse_request(line)
+    if error is not None:
+        outstream.write(json.dumps(error) + '\n')
+        outstream.flush()
+        return True
     response, keep_running = _handle_request(server, request)
     outstream.write(json.dumps(response) + '\n')
     outstream.flush()

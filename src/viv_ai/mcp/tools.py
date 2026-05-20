@@ -15,6 +15,123 @@ from .session import WorkspaceSessionManager
 ToolFn = Callable[..., Dict[str, Any]]
 
 
+def _schema(properties: Dict[str, Any], required: list[str] | None = None, additional_properties: bool = False) -> Dict[str, Any]:
+    return {
+        'type': 'object',
+        'properties': properties,
+        'required': list(required or []),
+        'additionalProperties': additional_properties,
+    }
+
+
+def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
+    hex_addr = {'type': ['string', 'integer'], 'description': 'Address or function VA as hex string like 0x401000 or integer.'}
+    workspace_id = {'type': 'string', 'description': 'Workspace ID returned by workspace_open.'}
+    max_results = {'type': 'integer', 'minimum': 1, 'description': 'Maximum number of results to return.'}
+    return {
+        'workspace_open': {
+            'description': 'Open a binary path in a managed Vivisect workspace.',
+            'inputSchema': _schema({'path': {'type': 'string', 'description': 'Filesystem path to the binary to open.'}}, ['path']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'workspace_status': {
+            'description': 'Return status and metadata for an open workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'workspace_close': {
+            'description': 'Close a managed workspace and release its state.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'get_metadata': {
+            'description': 'Return architecture, platform, and format metadata for an open workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_binary_summary': {
+            'description': 'Return a bounded overview of the current binary.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_strings': {
+            'description': 'Return bounded string locations from the workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_imports': {
+            'description': 'Return bounded imports from the workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_exports': {
+            'description': 'Return bounded exports from the workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_names': {
+            'description': 'Return bounded named locations from the workspace.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_xrefs_to': {
+            'description': 'Return bounded cross references to an address.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results}, ['workspace_id', 'va']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_xrefs_from': {
+            'description': 'Return bounded cross references from an address.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results}, ['workspace_id', 'va']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_function_summary': {
+            'description': 'Return a bounded structural summary for a function.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr}, ['workspace_id', 'fva'], additional_properties=True),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_function_graph': {
+            'description': 'Return a bounded graph summary for a function.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'max_nodes': max_results, 'max_edges': max_results}, ['workspace_id', 'fva']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'get_symbolik_summary': {
+            'description': 'Return a bounded summary of symbolik paths for a function.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'max_paths': max_results, 'max_constraints': max_results, 'max_effects': max_results}, ['workspace_id', 'fva']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'ai_explain_function': {
+            'description': 'Run AI-backed explanation for a function using the server-side analysis service.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr}, ['workspace_id', 'fva'], additional_properties=True),
+            'annotations': {'readOnlyHint': True},
+        },
+        'ai_summarize_binary': {
+            'description': 'Run AI-backed binary summarization using the server-side analysis service.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id'], additional_properties=True),
+            'annotations': {'readOnlyHint': True},
+        },
+        'propose_function_rename': {
+            'description': 'Create a non-mutating function rename proposal.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'new_name': {'type': 'string', 'description': 'Proposed function name.'}}, ['workspace_id', 'fva', 'new_name']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'propose_comment': {
+            'description': 'Create a non-mutating comment proposal for an address.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'comment': {'type': 'string', 'description': 'Proposed comment text.'}}, ['workspace_id', 'va', 'comment']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'apply_function_rename': {
+            'description': 'Apply a function rename if server-side mutation policy permits it.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'new_name': {'type': 'string', 'description': 'New function name to apply.'}}, ['workspace_id', 'fva', 'new_name']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'apply_comment': {
+            'description': 'Apply a comment if server-side mutation policy permits it.',
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'comment': {'type': 'string', 'description': 'Comment text to apply.'}}, ['workspace_id', 'va', 'comment']),
+            'annotations': {'readOnlyHint': False},
+        },
+    }
+
+
 def _analysis_service(manager: WorkspaceSessionManager) -> Any:
     service = getattr(manager, 'analysis_service', None)
     if service is None:
