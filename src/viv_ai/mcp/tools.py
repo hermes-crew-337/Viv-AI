@@ -109,6 +109,11 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
             'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id'], additional_properties=True),
             'annotations': {'readOnlyHint': True},
         },
+        'list_provider_models': {
+            'description': 'Report the configured provider, current selected model, discovered available models, and actionable configuration issues.',
+            'inputSchema': _schema({'provider_name': {'type': 'string', 'description': 'Optional configured provider name. Defaults to the server default provider.'}}, []),
+            'annotations': {'readOnlyHint': True},
+        },
         'propose_function_rename': {
             'description': 'Create a non-mutating function rename proposal.',
             'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'new_name': {'type': 'string', 'description': 'Proposed function name.'}}, ['workspace_id', 'fva', 'new_name']),
@@ -289,6 +294,12 @@ def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **k
     return ToolResponse.ok(workspace_id, 'binary', result, provenance={'tool': 'ai_summarize_binary'}, summary=summary).to_dict()
 
 
+def list_provider_models(manager: WorkspaceSessionManager, provider_name: str | None = None, **kwargs) -> Dict[str, Any]:
+    result = _analysis_service(manager).provider_status(provider_name=provider_name)
+    summary = f"provider {result['provider_name']} has {len(result['available_models'])} discovered models"
+    return ToolResponse.ok(None, 'provider', result, provenance={'tool': 'list_provider_models'}, summary=summary).to_dict()
+
+
 def propose_function_rename(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, new_name: str, **kwargs) -> Dict[str, Any]:
     proposal = _proposal(False, 'function_rename', parse_va(fva), 'name', new_name, 'proposal only')
     return ToolResponse.ok(workspace_id, 'function', proposal, provenance={'tool': 'propose_function_rename', 'mutation_policy': manager.mutation_policy.value}, summary=f'proposed rename to {new_name}').to_dict()
@@ -337,6 +348,7 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_symbolik_summary': get_symbolik_summary,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,
+        'list_provider_models': list_provider_models,
         'propose_function_rename': propose_function_rename,
         'propose_comment': propose_comment,
         'apply_function_rename': apply_function_rename,

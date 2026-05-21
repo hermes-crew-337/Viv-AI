@@ -14,7 +14,7 @@ Current operational defaults:
 
 ## Ollama model selection
 
-For the Ollama-backed analysis provider, the configured model name is passed through exactly as configured. There is currently no Viv-AI tool that enumerates available Ollama models for you, so you should choose from what the Ollama server already has installed.
+For the Ollama-backed analysis provider, the configured model name is passed through exactly as configured. You should still choose from what the Ollama server already has installed, but Viv-AI now exposes a `list_provider_models` MCP tool that reports the configured model, discovered available models, and actionable config issues.
 
 Examples of valid installed names seen during local validation include:
 - `qwen2.5:72b-instruct`
@@ -137,6 +137,12 @@ Open a workspace:
 
 ```json
 {"tool":"workspace_open","arguments":{"path":"/tmp/a.out"}}
+```
+
+List configured/discovered provider models:
+
+```json
+{"tool":"list_provider_models","arguments":{"provider_name":"ollama"}}
 ```
 
 Explain a function with AI:

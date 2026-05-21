@@ -4,7 +4,7 @@ AI integration plugin for Vivisect, including in-Viv helpers and an MCP-oriented
 
 ## Project status
 
-This repository now contains a standalone `viv_ai` package with GUI and MCP surfaces implemented through Phase O.
+This repository now contains a standalone `viv_ai` package with GUI and MCP surfaces implemented through Phase P.
 
 Implemented in Phase A:
 - standalone Python package namespace: `viv_ai`
@@ -13,7 +13,7 @@ Implemented in Phase A:
 - provider adapter scaffolding for Ollama, OpenAI-compatible APIs, Anthropic, and Gemini
 - optional live Ollama smoke test support
 
-Implemented through Phase O:
+Implemented through Phase P:
 - bounded binary/function extraction helpers
 - control-flow graph summarization helpers
 - symbolik path summarization helpers
@@ -45,6 +45,7 @@ Implemented through Phase O:
 - structured JSON-RPC parse/invalid-params error handling for stdio MCP requests
 - optional HTTP MCP transport with bearer-token auth via env-var reference
 - packaged `viv-ai-mcp-http` launcher for HTTP deployment smoke tests
+- provider/model discovery support including live Ollama model enumeration and actionable config validation hints
 - initial MCP client usage/examples documentation
 - context-menu entry generation for function explanation
 - staged review/apply flow helpers and settings persistence controller

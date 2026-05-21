@@ -13,6 +13,16 @@ class FakeAnalysisService:
     def __init__(self):
         self.calls = []
 
+    def provider_status(self, provider_name=None):
+        return {
+            'provider_name': provider_name or 'ollama',
+            'provider_type': 'ollama',
+            'endpoint': 'http://MATRIX:11434',
+            'configured_model': 'qwen2.5:72b-instruct',
+            'available_models': ['qwen2.5:72b-instruct', 'gemma4:31b'],
+            'issues': [],
+        }
+
     def analyze_function(self, vw, fva, options=None):
         self.calls.append({'task': 'function', 'vw': vw, 'fva': fva, 'options': dict(options or {})})
         return {
@@ -64,6 +74,7 @@ class McpAiToolTests(unittest.TestCase):
 
         self.assertIn('ai_explain_function', registry)
         self.assertIn('ai_summarize_binary', registry)
+        self.assertIn('list_provider_models', registry)
 
     def test_ai_explain_function_reuses_analysis_service(self):
         service = FakeAnalysisService()
@@ -95,6 +106,18 @@ class McpAiToolTests(unittest.TestCase):
         self.assertEqual(service.calls[0]['task'], 'binary')
         self.assertEqual(service.calls[0]['options']['temperature'], 0.1)
         self.assertIn('ELF utility', result['summary'])
+
+    def test_list_provider_models_reuses_analysis_service(self):
+        service = FakeAnalysisService()
+        server = self._server(service)
+
+        result = server.call_tool('list_provider_models', provider_name='ollama')
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['request_scope'], 'provider')
+        self.assertEqual(result['data']['provider_name'], 'ollama')
+        self.assertIn('qwen2.5:72b-instruct', result['data']['available_models'])
+        self.assertEqual(result['data']['issues'], [])
 
     def test_ai_tools_fail_cleanly_when_service_missing(self):
         from viv_ai.mcp.server import VivAIMcpServer

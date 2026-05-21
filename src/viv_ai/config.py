@@ -21,6 +21,36 @@ class AiConfig:
     mcp_http_auth_token_env: Optional[str] = None
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
+    def validate(self) -> list[Dict[str, str]]:
+        issues: list[Dict[str, str]] = []
+        if self.default_provider not in self.providers:
+            issues.append({
+                'field': 'default_provider',
+                'message': f'default provider {self.default_provider!r} is not configured',
+                'hint': f'Add providers.{self.default_provider} to the config before using analysis features.',
+            })
+
+        for name, provider in self.providers.items():
+            if not provider.endpoint:
+                issues.append({
+                    'field': f'providers.{name}.endpoint',
+                    'message': f'provider {name!r} has no endpoint configured',
+                    'hint': 'Set the provider endpoint URL before using this provider.',
+                })
+            if not provider.model:
+                hint = 'Set an exact model name for this provider.'
+                if provider.provider_type == 'ollama':
+                    hint = (
+                        f'Set providers.{name}.model to an exact installed model name. '
+                        'Discover names with ollama list or GET /api/tags on the Ollama server.'
+                    )
+                issues.append({
+                    'field': f'providers.{name}.model',
+                    'message': f'provider {name!r} has no model configured',
+                    'hint': hint,
+                })
+        return issues
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'default_provider': self.default_provider,

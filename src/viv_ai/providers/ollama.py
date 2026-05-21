@@ -1,4 +1,5 @@
 import json
+import urllib.request
 from typing import Any, Dict, Optional
 
 from ..models import ProviderCapabilities
@@ -7,6 +8,17 @@ from .base import BaseProvider
 
 class OllamaProvider(BaseProvider):
     capabilities = ProviderCapabilities(supports_json_mode=True, supports_tools=False, local_only=True)
+
+    def list_models(self):
+        url = f"{self.config.endpoint.rstrip('/')}/api/tags"
+        with urllib.request.urlopen(url, timeout=self.config.timeout_seconds) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+        models = []
+        for item in payload.get('models', []):
+            name = item.get('name')
+            if name:
+                models.append(name)
+        return models
 
     def build_request(self, task_type: str, system_prompt: str, user_payload: Dict[str, Any], schema: Dict[str, Any], options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         options = dict(options or {})

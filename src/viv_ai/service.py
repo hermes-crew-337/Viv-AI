@@ -24,6 +24,36 @@ class AnalysisService:
         self.cache = cache or AnalysisCache()
         self.provider_factory = provider_factory or create_provider
 
+    def provider_status(self, provider_name: Optional[str] = None) -> Dict[str, Any]:
+        name = provider_name or self.config.default_provider
+        cfg = self.config.providers.get(name)
+        if cfg is None:
+            raise AnalysisError(f'unknown provider: {name}')
+        issues = [issue for issue in self.config.validate() if issue.get('field', '').startswith(f'providers.{name}.') or issue.get('field') == 'default_provider']
+        available_models = []
+        model_error = None
+        try:
+            provider = self.provider_factory(cfg)
+            lister = getattr(provider, 'list_models', None)
+            if callable(lister):
+                available_models = list(lister() or [])
+        except Exception as exc:
+            model_error = str(exc)
+        if model_error:
+            issues = list(issues) + [{
+                'field': f'providers.{name}.model',
+                'message': f'failed to discover available models for provider {name!r}',
+                'hint': model_error,
+            }]
+        return {
+            'provider_name': name,
+            'provider_type': cfg.provider_type,
+            'endpoint': cfg.endpoint,
+            'configured_model': cfg.model,
+            'available_models': available_models,
+            'issues': issues,
+        }
+
     def analyze_binary(self, vw: Any, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = extract_binary_overview(vw)
         return self._run_task('binary_summary', payload, options)
