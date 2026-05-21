@@ -12,6 +12,26 @@ Current operational defaults:
 - tool discovery includes per-tool input schemas and read-only hints for MCP clients
 - optional HTTP transport uses bearer auth via an env-var reference, not an in-config raw secret
 
+## Ollama model selection
+
+For the Ollama-backed analysis provider, the configured model name is passed through exactly as configured. There is currently no Viv-AI tool that enumerates available Ollama models for you, so you should choose from what the Ollama server already has installed.
+
+Examples of valid installed names seen during local validation include:
+- `qwen2.5:72b-instruct`
+- `qwen2.5-coder:32b-instruct`
+- `cas/llama-3.2-3b-instruct:latest`
+- `gemma4:31b`
+
+To discover what your Ollama server currently exposes:
+
+```bash
+curl http://MATRIX:11434/api/tags
+# or:
+ollama list
+```
+
+For the live smoke test in this repo, set the exact model name with `VIV_AI_OLLAMA_MODEL`.
+
 ## Hermes Agent client example
 
 Launch the packaged stdio entrypoint:

@@ -2,9 +2,9 @@
 
 AI integration plugin for Vivisect, including in-Viv helpers and an MCP-oriented core.
 
-## Phase A status
+## Project status
 
-This repository currently contains the standalone Phase A package skeleton.
+This repository now contains a standalone `viv_ai` package with GUI and MCP surfaces implemented through Phase O.
 
 Implemented in Phase A:
 - standalone Python package namespace: `viv_ai`
@@ -56,6 +56,17 @@ Still not yet implemented:
 
 ## Development setup
 
+Preferred setup on hosts that already have `uv` available:
+
+```bash
+uv venv --clear .venv
+. .venv/bin/activate
+uv pip install pytest vivisect
+uv pip install -e .
+```
+
+If your Python installation includes `pip`, the classic flow also works:
+
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
@@ -83,7 +94,18 @@ Optional live Ollama smoke test:
 ```bash
 export VIV_AI_ENABLE_LIVE_OLLAMA_TEST=1
 export VIV_AI_OLLAMA_ENDPOINT=http://MATRIX:11434
+export VIV_AI_OLLAMA_MODEL=qwen2.5:72b-instruct
 pytest tests/test_ollama_live.py
+```
+
+For the Ollama provider, `ProviderConfig.model` is used verbatim in requests. That means you do need the exact installed model name, such as `qwen2.5:72b-instruct` or `cas/llama-3.2-3b-instruct:latest`.
+
+To list available models from Ollama:
+
+```bash
+curl http://MATRIX:11434/api/tags
+# or, if the local Ollama CLI is installed:
+ollama list
 ```
 
 ## Using with Vivisect
@@ -97,3 +119,4 @@ export VIV_EXT_PATH=/path/to/Viv-AI/src
 ## MCP docs
 
 - docs/mcp-client-usage.md
+- docs/roadmap-phases-p-plus.md
