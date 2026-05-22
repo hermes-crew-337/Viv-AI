@@ -330,6 +330,104 @@ def apply_comment(manager: WorkspaceSessionManager, workspace_id: str, va: Any, 
     return ToolResponse.ok(workspace_id, 'address', result, provenance={'tool': 'apply_comment', 'mutation_policy': policy.value}, summary='comment applied').to_dict()
 
 
+# ---------------------------------------------------------------------------
+# Bug-Hunting Tools
+# ---------------------------------------------------------------------------
+
+def get_dangerous_sinks(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    from .formatters import collect_dangerous_sinks
+    items, truncated = bounded(collect_dangerous_sinks(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'dangerous_sinks': items, 'truncated': truncated}, provenance={'tool': 'get_dangerous_sinks'}, summary=f'{len(items)} dangerous sinks found').to_dict()
+
+
+def get_attacker_sources(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    from .formatters import collect_attacker_sources
+    items, truncated = bounded(collect_attacker_sources(workspace), max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'attacker_sources': items, 'truncated': truncated}, provenance={'tool': 'get_attacker_sources'}, summary=f'{len(items)} attacker sources found').to_dict()
+
+
+def find_attack_paths(manager: WorkspaceSessionManager, workspace_id: str, sink_addresses: list, source_addresses: list = None, max_depth: int = 32, **kwargs) -> Dict[str, Any]:
+    """Find data-flow paths from attacker sources to dangerous sinks."""
+    workspace = manager.get_workspace(workspace_id)
+    from .formatters import collect_dangerous_sinks, collect_attacker_sources
+
+    sink_addrs = {int(a, 0) for a in sink_addresses} if sink_addresses else {p['va'] for p in collect_dangerous_sinks(workspace)}
+    if source_addresses:
+        src_addrs = {int(a, 0) for a in source_addresses}
+    else:
+        src_addrs = {p['va'] for p in collect_attacker_sources(workspace)}
+
+    # For each dangerous sink, check if any function that calls it
+    # also has attacker-influenced string_refs or import_refs
+    findings = []
+    for func_va in workspace.getFunctions():
+        func_summary = None
+        try:
+            from ..extractors import extract_function_overview
+            func_summary = extract_function_overview(workspace, func_va)
+        except Exception:
+            continue
+
+        if not func_summary:
+            continue
+
+        # Check if this function's graph reaches any sink
+        graph = func_summary.get('graph_summary', {})
+        roots = graph.get('roots', [])
+        if not any(int(r, 0) in sink_addrs for r in roots):
+            # Check all callees/edges
+            callees = func_summary.get('callees', [])
+            has_sink_reach = False
+            for callee in callees:
+                callee_addr = int(callee, 0)
+                if callee_addr in sink_addrs:
+                    has_sink_reach = True
+                    break
+
+            # Also check via import_refs (which have target_va)
+            import_refs = func_summary.get('import_refs', [])
+            for ref in import_refs:
+                target = int(ref.get('target_va', 0), 0)
+                if target in sink_addrs:
+                    has_sink_reach = True
+                    break
+
+            if not has_sink_reach:
+                continue
+
+        # Check for attacker-controlled data flow
+        import_refs = func_summary.get('import_refs', [])
+        string_refs = func_summary.get('string_refs', [])
+        attack_sources = []
+        suspicious_strings = []
+
+        # Check string_refs for dangerous payloads
+        for sr in string_refs:
+            val = str(sr.get('value', ''))
+            dangerous_strings = ['/bin/sh', '/bin/bash', 'sh -c', 'system(', 'exec(', 'popen(', 'execve(']
+            for ds in dangerous_strings:
+                if ds.lower() in val.lower():
+                    suspicious_strings.append({'text': val[:80], 'address': sr.get('from_va')})
+                    break
+
+        findings.append({
+            'function_name': func_summary.get('function', {}).get('name', 'unknown'),
+            'function_va': func_summary.get('function', {}).get('va', 'unknown'),
+            'imports': [dict(ref) for ref in import_refs],
+            'dangerous_strings': suspicious_strings,
+            'attack_possible': len(suspicious_strings) > 0,
+        })
+
+    return ToolResponse.ok(
+        workspace_id, 'workspace',
+        {'findings': findings, 'total_functions_scanned': len(findings)},
+        provenance={'tool': 'find_attack_paths'},
+        summary=f'Analyzed {len(findings)} functions for exploit paths'
+    ).to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -353,4 +451,8 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'propose_comment': propose_comment,
         'apply_function_rename': apply_function_rename,
         'apply_comment': apply_comment,
+        # Bug-hunting tools
+        'get_dangerous_sinks': get_dangerous_sinks,
+        'get_attacker_sources': get_attacker_sources,
+        'find_attack_paths': find_attack_paths,
     }
