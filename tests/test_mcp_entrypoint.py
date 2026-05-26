@@ -147,6 +147,15 @@ class McpEntrypointTests(unittest.TestCase):
         self.assertTrue(keep_running)
         self.assertEqual(response['error']['code'], -32602)
 
+    def test_build_arg_parser_accepts_config_option(self):
+        from viv_ai.mcp.entrypoint import build_arg_parser
+
+        parser = build_arg_parser()
+        args = parser.parse_args(['--once', '--config', '/tmp/viv-ai.json'])
+
+        self.assertTrue(args.once)
+        self.assertEqual(args.config, '/tmp/viv-ai.json')
+
 
 if __name__ == '__main__':
     unittest.main()

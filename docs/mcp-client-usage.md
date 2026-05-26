@@ -2,6 +2,14 @@
 
 This document shows minimal client-side setup patterns and example tool calls for the current Viv-AI MCP server.
 
+Before launching the server, remember the config lookup order:
+- explicit CLI flag: `--config /path/to/config.json`
+- env override: `VIV_AI_CONFIG=/path/to/config.json`
+- default file: `~/.config/viv-ai/config.json`
+- otherwise: default in-memory config
+
+Provider config examples for Ollama, OpenAI-compatible APIs, Anthropic, Gemini, and OpenRouter-style use live in `docs/provider-configuration.md`.
+
 ## Server posture
 
 Current operational defaults:

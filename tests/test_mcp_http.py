@@ -139,6 +139,15 @@ class McpHttpTransportTests(unittest.TestCase):
                 thread.join(timeout=5)
             httpd.server_close()
 
+    def test_http_arg_parser_accepts_config_option(self):
+        from viv_ai.mcp.http_transport import build_arg_parser
+
+        parser = build_arg_parser()
+        args = parser.parse_args(['--config', '/tmp/viv-ai.json', '--path', '/custom'])
+
+        self.assertEqual(args.config, '/tmp/viv-ai.json')
+        self.assertEqual(args.path, '/custom')
+
 
 if __name__ == '__main__':
     unittest.main()

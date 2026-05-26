@@ -23,7 +23,8 @@ class PhaseAPluginLoadingTests(unittest.TestCase):
 
         self.assertTrue(callable(module.vivExtension))
         self.assertEqual(result['name'], 'viv_ai')
-        self.assertIn('Phase D core loaded without GUI', events[-1])
+        self.assertIn('config_path', result)
+        self.assertTrue(any('Phase P core loaded without GUI' in event for event in events))
 
     def test_top_level_runtime_import_and_plugin_wrapper_share_entrypoint(self):
         plugin_root = pathlib.Path(__file__).resolve().parents[1] / 'src'

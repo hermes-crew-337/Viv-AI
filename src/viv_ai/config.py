@@ -7,6 +7,10 @@ from typing import Any, Dict, Optional
 from .models import MutationPolicy, ProviderConfig
 
 
+_DEFAULT_CONFIG_ENV = 'VIV_AI_CONFIG'
+_DEFAULT_CONFIG_PATH = Path('~/.config/viv-ai/config.json').expanduser()
+
+
 @dataclasses.dataclass
 class AiConfig:
     default_provider: str = 'ollama'
@@ -107,3 +111,27 @@ class AiConfig:
 
 MutationPolicy = MutationPolicy
 ProviderConfig = ProviderConfig
+
+
+def default_config_path() -> Path:
+    return _DEFAULT_CONFIG_PATH
+
+
+def resolve_config_path(path: os.PathLike[str] | str | None = None) -> Optional[Path]:
+    if path:
+        return Path(path).expanduser()
+    env_path = os.getenv(_DEFAULT_CONFIG_ENV)
+    if env_path:
+        return Path(env_path).expanduser()
+    if _DEFAULT_CONFIG_PATH.exists():
+        return _DEFAULT_CONFIG_PATH
+    return None
+
+
+def load_runtime_config(path: os.PathLike[str] | str | None = None) -> AiConfig:
+    resolved = resolve_config_path(path)
+    if resolved is None:
+        return AiConfig()
+    if not resolved.exists():
+        raise FileNotFoundError(f'Viv-AI config file not found: {resolved}')
+    return AiConfig.load(resolved)

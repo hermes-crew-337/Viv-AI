@@ -7,7 +7,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Iterable, Optional
 
-from ..config import AiConfig
+from ..config import AiConfig, load_runtime_config
+from ..service import AnalysisService
 from .entrypoint import _error_response, _handle_request, _parse_request
 from .server import VivAIMcpServer
 
@@ -100,15 +101,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--path', default='/mcp')
     parser.add_argument('--auth-token-env', default=None)
+    parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     return parser
 
 
 def main(argv: Optional[Iterable[str]] = None, server: Optional[VivAIMcpServer] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    server = server or VivAIMcpServer()
+    config = None
+    if server is None:
+        config = load_runtime_config(args.config)
+        server = VivAIMcpServer(analysis_service=AnalysisService(config))
     server.start()
-    httpd = create_http_server(server, host=args.host, port=args.port, path=args.path, auth_token_env=args.auth_token_env)
+    httpd = create_http_server(
+        server,
+        host=args.host,
+        port=args.port,
+        path=args.path,
+        auth_token_env=args.auth_token_env,
+        config=config,
+    )
     try:
         httpd.serve_forever()
     finally:

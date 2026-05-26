@@ -5,6 +5,8 @@ import json
 import sys
 from typing import Any, Dict, Iterable, Optional, TextIO
 
+from ..config import load_runtime_config
+from ..service import AnalysisService
 from .server import VivAIMcpServer
 from .tools import build_tool_metadata
 
@@ -118,13 +120,16 @@ def serve_forever(server: VivAIMcpServer, instream: TextIO, outstream: TextIO) -
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Viv-AI MCP stdio entrypoint')
     parser.add_argument('--once', action='store_true', help='process a single JSON-RPC request from stdin and exit')
+    parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     return parser
 
 
 def main(argv: Optional[Iterable[str]] = None, instream: Optional[TextIO] = None, outstream: Optional[TextIO] = None, server: Optional[VivAIMcpServer] = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    server = server or VivAIMcpServer()
+    if server is None:
+        config = load_runtime_config(args.config)
+        server = VivAIMcpServer(analysis_service=AnalysisService(config))
     instream = instream or sys.stdin
     outstream = outstream or sys.stdout
     if args.once:
