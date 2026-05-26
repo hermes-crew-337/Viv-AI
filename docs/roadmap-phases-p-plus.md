@@ -72,3 +72,17 @@ Suggested scope:
 - CI test matrix for unit/integration/live-optional jobs
 - contributor docs for adding providers/tools/schemas safely
 - long-lived compatibility guidance for Vivisect and Ollama versions
+
+## Related docs
+
+For the full Phase P implementation plan, see:
+- `docs/plans/2026-05-22-phase-p-usability-installation.md`
+
+For standard analysis workflows being targeted, see:
+- `docs/analysis-workflows.md`
+
+For VivCLI command surface planning, see:
+- `docs/vivcli-command-surface.md`
+
+For provider configuration examples, see:
+- `docs/provider-configuration.md`
