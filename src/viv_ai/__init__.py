@@ -10,6 +10,7 @@ from .ui.widgets import install_gui
 
 
 def vivExtension(vw, vwgui):
+    from .vulntriage import install_vuln_gui
     config_path = resolve_config_path()
     config = load_runtime_config(config_path)
     result = {'name': 'viv_ai', 'vwgui_present': vwgui is not None, 'config_path': str(config_path) if config_path else None}
@@ -19,10 +20,13 @@ def vivExtension(vw, vwgui):
         return result
 
     panel, dock = install_gui(vw, vwgui, config=config)
+    vuln_panel, vuln_dock = install_vuln_gui(vw, vwgui, config=config)
     result['panel'] = panel
     result['dock'] = dock
+    result['vuln_panel'] = vuln_panel
+    result['vuln_dock'] = vuln_dock
     detail = f' using config {config_path}' if config_path else ' with default in-memory config'
-    vw.vprint(f'viv_ai Phase P GUI loaded (panel, menu, context hook){detail}')
+    vw.vprint(f'viv_ai Phase P GUI loaded (panel, menu, context hook, vuln triage){detail}')
     return result
 
 
