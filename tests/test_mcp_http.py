@@ -366,6 +366,95 @@ class McpHttpTransportTests(unittest.TestCase):
 
         self.assertEqual(info['max_request_size'], 500)
 
+    def test_http_server_generates_request_ids_for_error_responses(self):
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, host='127.0.0.1', port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send a request to a non-existent path
+            conn.request(
+                'POST',
+                '/non-existent',
+                body=json.dumps({'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 404)
+            self.assertIn('id', payload)
+            self.assertIsNotNone(payload['id'])
+            self.assertEqual(payload['error']['code'], 404)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_includes_request_id_in_parse_errors(self):
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, host='127.0.0.1', port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send invalid JSON
+            conn.request(
+                'POST',
+                '/mcp',
+                body='invalid json',
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)  # JSON-RPC errors are returned with 200 status
+            self.assertIn('id', payload)
+            self.assertIsNotNone(payload['id'])
+            self.assertEqual(payload['error']['code'], -32700)  # Parse error
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_error_response_format(self):
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, host='127.0.0.1', port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send a request with an invalid method
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 1, 'method': 'non_existent_method', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)  # JSON-RPC errors are returned with 200 status
+            self.assertEqual(payload['id'], 1)
+            self.assertIn('error', payload)
+            self.assertIn('code', payload['error'])
+            self.assertIn('message', payload['error'])
+            self.assertEqual(payload['error']['code'], -32601)  # Method not found
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
     def test_http_shutdown_request_stops_transport(self):
         from viv_ai.mcp.http_transport import create_http_server
         from viv_ai.mcp.server import VivAIMcpServer

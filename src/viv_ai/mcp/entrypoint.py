@@ -39,8 +39,11 @@ def _ok_response(request_id: Any, result: Any) -> Dict[str, Any]:
     return {'jsonrpc': '2.0', 'id': request_id, 'result': result}
 
 
-def _error_response(request_id: Any, code: int, message: str) -> Dict[str, Any]:
-    return {'jsonrpc': '2.0', 'id': request_id, 'error': {'code': code, 'message': message}}
+def _error_response(request_id: Any, code: int, message: str, data: Optional[Any] = None) -> Dict[str, Any]:
+    error = {'code': code, 'message': message}
+    if data is not None:
+        error['data'] = data
+    return {'jsonrpc': '2.0', 'id': request_id, 'error': error}
 
 
 def _parse_request(line: str) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:

@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import argparse
 import json
 import os
 import threading
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Iterable, Optional
 
@@ -53,6 +52,10 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
             return
+
+        def _generate_request_id(self) -> str:
+            """Generate a unique request ID for tracing."""
+            return str(uuid.uuid4())
 
         def _write_json(self, status: int, payload: Dict[str, Any]) -> None:
             body = json.dumps(payload).encode('utf-8')
@@ -105,8 +108,10 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             return True
 
         def do_POST(self) -> None:
+            request_id = self._generate_request_id()
+            
             if self.path != path:
-                self._write_json(404, _error_response(None, 404, f'not found: {self.path}'))
+                self._write_json(404, _error_response(request_id, 404, f'not found: {self.path}'))
                 return
             if not self._check_auth():
                 return
@@ -115,23 +120,30 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             try:
                 length = int(self.headers.get('Content-Length', '0'))
             except ValueError:
-                self._write_json(400, _error_response(None, 400, 'invalid content-length'))
+                self._write_json(400, _error_response(request_id, 400, 'invalid content-length'))
                 return
             raw = self.rfile.read(length).decode('utf-8')
             request, error = _parse_request(raw)
             if error is not None:
+                # Add request ID to error response
+                error['id'] = request_id
                 self._write_json(200, error)
                 return
+            # Add request ID to the request for tracing
+            if request is not None:
+                request['id'] = request.get('id', request_id)
             response, keep_running = _handle_request(server, request)
             self._write_json(200, response)
             if not keep_running:
                 threading.Thread(target=httpd.shutdown, daemon=True).start()
 
         def do_GET(self) -> None:
+            request_id = self._generate_request_id()
+            
             if self.path == '/healthz':
                 self._write_json(200, {'ok': True, 'server': server.server_info(), 'http': httpd.vivai_http_info()})
                 return
-            self._write_json(404, _error_response(None, 404, f'not found: {self.path}'))
+            self._write_json(404, _error_response(request_id, 404, f'not found: {self.path}'))
 
     httpd = ThreadingHTTPServer((host, port), Handler)
 
