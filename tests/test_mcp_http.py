@@ -110,6 +110,144 @@ class McpHttpTransportTests(unittest.TestCase):
         finally:
             os.environ.pop('VIV_AI_MCP_TOKEN', None)
 
+    def test_http_server_supports_api_key_auth_via_config(self):
+        import os
+
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        os.environ['VIV_AI_MCP_API_KEY'] = 'secret-api-key'
+        try:
+            config = AiConfig.from_dict({
+                'mcp_http_bind_host': '127.0.0.1',
+                'mcp_http_bind_port': 0,
+                'mcp_http_api_key_env': 'VIV_AI_MCP_API_KEY',
+            })
+            server = VivAIMcpServer()
+            httpd = create_http_server(server, config=config)
+            info = httpd.vivai_http_info()
+
+            self.assertEqual(info['api_key_env'], 'VIV_AI_MCP_API_KEY')
+            self.assertTrue(info['auth_required'])
+            self.assertNotIn('secret-api-key', json.dumps(info))
+        finally:
+            os.environ.pop('VIV_AI_MCP_API_KEY', None)
+
+    def test_http_server_handles_initialize_with_api_key_auth(self):
+        import os
+
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        os.environ['VIV_AI_MCP_API_KEY'] = 'secret-api-key'
+        try:
+            config = AiConfig.from_dict({
+                'mcp_http_bind_host': '127.0.0.1',
+                'mcp_http_bind_port': 0,
+                'mcp_http_api_key_env': 'VIV_AI_MCP_API_KEY',
+            })
+            server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+            httpd = create_http_server(server, config=config)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = httpd.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    'POST',
+                    '/mcp',
+                    body=json.dumps({'id': 1, 'method': 'initialize', 'params': {}}),
+                    headers={'Content-Type': 'application/json', 'X-API-Key': 'secret-api-key'},
+                )
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(payload['result']['serverInfo']['name'], 'viv_ai_mcp')
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+        finally:
+            os.environ.pop('VIV_AI_MCP_API_KEY', None)
+
+    def test_http_server_rejects_invalid_api_key(self):
+        import os
+
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        os.environ['VIV_AI_MCP_API_KEY'] = 'secret-api-key'
+        try:
+            config = AiConfig.from_dict({
+                'mcp_http_bind_host': '127.0.0.1',
+                'mcp_http_bind_port': 0,
+                'mcp_http_api_key_env': 'VIV_AI_MCP_API_KEY',
+            })
+            server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+            httpd = create_http_server(server, config=config)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = httpd.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    'POST',
+                    '/mcp',
+                    body=json.dumps({'id': 3, 'method': 'ping', 'params': {}}),
+                    headers={'Content-Type': 'application/json', 'X-API-Key': 'wrong-key'},
+                )
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                self.assertEqual(resp.status, 401)
+                self.assertEqual(payload['error']['code'], 401)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+        finally:
+            os.environ.pop('VIV_AI_MCP_API_KEY', None)
+
+    def test_http_server_accepts_api_key_in_authorization_header(self):
+        import os
+
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        os.environ['VIV_AI_MCP_API_KEY'] = 'secret-api-key'
+        try:
+            config = AiConfig.from_dict({
+                'mcp_http_bind_host': '127.0.0.1',
+                'mcp_http_bind_port': 0,
+                'mcp_http_api_key_env': 'VIV_AI_MCP_API_KEY',
+            })
+            server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+            httpd = create_http_server(server, config=config)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = httpd.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    'POST',
+                    '/mcp',
+                    body=json.dumps({'id': 1, 'method': 'initialize', 'params': {}}),
+                    headers={'Content-Type': 'application/json', 'Authorization': 'Bearer secret-api-key'},
+                )
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(payload['result']['serverInfo']['name'], 'viv_ai_mcp')
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+        finally:
+            os.environ.pop('VIV_AI_MCP_API_KEY', None)
+
     def test_http_shutdown_request_stops_transport(self):
         from viv_ai.mcp.http_transport import create_http_server
         from viv_ai.mcp.server import VivAIMcpServer

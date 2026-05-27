@@ -23,6 +23,7 @@ class AiConfig:
     mcp_http_bind_host: str = '127.0.0.1'
     mcp_http_bind_port: int = 0
     mcp_http_auth_token_env: Optional[str] = None
+    mcp_http_api_key_env: Optional[str] = None
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
     def validate(self) -> list[Dict[str, str]]:
@@ -67,6 +68,7 @@ class AiConfig:
             'mcp_http_bind_host': self.mcp_http_bind_host,
             'mcp_http_bind_port': self.mcp_http_bind_port,
             'mcp_http_auth_token_env': self.mcp_http_auth_token_env,
+            'mcp_http_api_key_env': self.mcp_http_api_key_env,
             'providers': {name: cfg.to_dict() for name, cfg in self.providers.items()},
         }
 
@@ -94,6 +96,7 @@ class AiConfig:
             mcp_http_bind_host=str(data.get('mcp_http_bind_host', '127.0.0.1')),
             mcp_http_bind_port=int(data.get('mcp_http_bind_port', 0)),
             mcp_http_auth_token_env=data.get('mcp_http_auth_token_env'),
+            mcp_http_api_key_env=data.get('mcp_http_api_key_env'),
             providers=providers,
         )
 

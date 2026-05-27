@@ -198,7 +198,7 @@ If a remote-capable provider is configured but the policy still says local-only,
 
 For the optional HTTP MCP transport, keep raw auth secrets out of the config file itself when possible.
 
-Example:
+Example using bearer token authentication:
 
 ```json
 {
@@ -208,10 +208,25 @@ Example:
 }
 ```
 
-Then export the actual token before launching:
+Example using API key authentication:
+
+```json
+{
+  "mcp_http_bind_host": "127.0.0.1",
+  "mcp_http_bind_port": 8765,
+  "mcp_http_api_key_env": "VIV_AI_MCP_API_KEY"
+}
+```
+
+Then export the actual token or API key before launching:
 
 ```bash
+# For bearer token authentication
 export VIV_AI_MCP_TOKEN=replace-me
+viv-ai-mcp-http --config ~/.config/viv-ai/config.json
+
+# For API key authentication
+export VIV_AI_MCP_API_KEY=replace-me
 viv-ai-mcp-http --config ~/.config/viv-ai/config.json
 ```
 
@@ -245,7 +260,7 @@ Fix:
 ### HTTP MCP auth env var is not set
 
 Fix:
-- export the env var named by `mcp_http_auth_token_env`
+- export the env var named by `mcp_http_auth_token_env` or `mcp_http_api_key_env`
 - then restart `viv-ai-mcp-http`
 
 ## Related docs

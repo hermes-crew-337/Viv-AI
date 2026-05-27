@@ -75,18 +75,35 @@ Example prompts once connected:
 Optional HTTP transport is also available:
 
 ```bash
+# Using bearer token authentication
 export VIV_AI_MCP_TOKEN=replace-me
 viv-ai-mcp-http --host 127.0.0.1 --port 8765 --auth-token-env VIV_AI_MCP_TOKEN
+
+# Using API key authentication
+export VIV_AI_MCP_API_KEY=replace-me
+viv-ai-mcp-http --host 127.0.0.1 --port 8765 --api-key-env VIV_AI_MCP_API_KEY
 ```
 
-Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with:
+Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with either:
 
+Bearer token authentication:
 ```http
 Authorization: Bearer replace-me
 Content-Type: application/json
 ```
 
-`GET /healthz` returns a lightweight health/transport summary without exposing the token value.
+API key authentication (two options):
+```http
+# Option 1: X-API-Key header
+X-API-Key: replace-me
+Content-Type: application/json
+
+# Option 2: Authorization header with Bearer prefix
+Authorization: Bearer replace-me
+Content-Type: application/json
+```
+
+`GET /healthz` returns a lightweight health/transport summary without exposing the token or API key value.
 
 ## Claude Desktop / generic stdio MCP shape
 

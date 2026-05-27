@@ -13,23 +13,41 @@ from .entrypoint import _error_response, _handle_request, _parse_request
 from .server import VivAIMcpServer
 
 
-def _resolve_auth(auth_token: Optional[str] = None, auth_token_env: Optional[str] = None):
+def _resolve_auth(auth_token: Optional[str] = None, auth_token_env: Optional[str] = None, api_key: Optional[str] = None, api_key_env: Optional[str] = None):
+    # Resolve bearer token auth
+    token = None
+    token_env = None
     if auth_token is not None:
-        return auth_token, None
-    if auth_token_env:
+        token = auth_token
+    elif auth_token_env:
         value = os.getenv(auth_token_env)
         if not value:
             raise ValueError(f'HTTP auth token env var is not set: {auth_token_env}')
-        return value, auth_token_env
-    return None, None
+        token = value
+        token_env = auth_token_env
+    
+    # Resolve API key auth
+    key = None
+    key_env = None
+    if api_key is not None:
+        key = api_key
+    elif api_key_env:
+        value = os.getenv(api_key_env)
+        if not value:
+            raise ValueError(f'HTTP API key env var is not set: {api_key_env}')
+        key = value
+        key_env = api_key_env
+    
+    return token, token_env, key, key_env
 
 
-def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: int = 0, path: str = '/mcp', auth_token: Optional[str] = None, auth_token_env: Optional[str] = None, config: Optional[AiConfig] = None) -> ThreadingHTTPServer:
+def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: int = 0, path: str = '/mcp', auth_token: Optional[str] = None, auth_token_env: Optional[str] = None, api_key: Optional[str] = None, api_key_env: Optional[str] = None, config: Optional[AiConfig] = None) -> ThreadingHTTPServer:
     if config is not None:
         host = config.mcp_http_bind_host
         port = config.mcp_http_bind_port
         auth_token_env = config.mcp_http_auth_token_env
-    auth_token, auth_token_env = _resolve_auth(auth_token=auth_token, auth_token_env=auth_token_env)
+        api_key_env = config.mcp_http_api_key_env
+    auth_token, auth_token_env, api_key, api_key_env = _resolve_auth(auth_token=auth_token, auth_token_env=auth_token_env, api_key=api_key, api_key_env=api_key_env)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
@@ -44,11 +62,27 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             self.wfile.write(body)
 
         def _check_auth(self) -> bool:
-            if auth_token is None:
+            # If no auth is configured, allow access
+            if auth_token is None and api_key is None:
                 return True
-            header = self.headers.get('Authorization', '')
-            if header == f'Bearer {auth_token}':
-                return True
+            
+            # Check bearer token auth
+            if auth_token is not None:
+                header = self.headers.get('Authorization', '')
+                if header == f'Bearer {auth_token}':
+                    return True
+            
+            # Check API key auth
+            if api_key is not None:
+                # Check Authorization header for Bearer API key
+                header = self.headers.get('Authorization', '')
+                if header == f'Bearer {api_key}':
+                    return True
+                # Check X-API-Key header
+                api_key_header = self.headers.get('X-API-Key', '')
+                if api_key_header == api_key:
+                    return True
+            
             self._write_json(401, _error_response(None, 401, 'unauthorized'))
             return False
 
@@ -87,8 +121,9 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             'host': bound_host,
             'port': bound_port,
             'path': path,
-            'auth_required': auth_token is not None,
+            'auth_required': auth_token is not None or api_key is not None,
             'auth_token_env': auth_token_env,
+            'api_key_env': api_key_env,
         }
 
     httpd.vivai_http_info = vivai_http_info  # type: ignore[attr-defined]
@@ -101,6 +136,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--path', default='/mcp')
     parser.add_argument('--auth-token-env', default=None)
+    parser.add_argument('--api-key-env', default=None)
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     return parser
 
@@ -119,6 +155,7 @@ def main(argv: Optional[Iterable[str]] = None, server: Optional[VivAIMcpServer] 
         port=args.port,
         path=args.path,
         auth_token_env=args.auth_token_env,
+        api_key_env=args.api_key_env,
         config=config,
     )
     try:
