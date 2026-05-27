@@ -23,6 +23,26 @@ class RenderTests(unittest.TestCase):
         self.assertIn('- calls ReadFile', text)
         self.assertIn('- names buffer_count', text)
 
+    def test_render_analysis_result_formats_provider_status(self):
+        from viv_ai.ui.render import render_analysis_result
+
+        text = render_analysis_result({
+            'task_type': 'provider_status',
+            'status': {
+                'provider_name': 'ollama',
+                'provider_type': 'ollama',
+                'endpoint': 'http://MATRIX:11434',
+                'configured_model': 'qwen2.5:72b-instruct',
+                'available_models': ['qwen2.5:72b-instruct', 'gemma4:31b'],
+                'issues': [],
+            },
+        })
+
+        self.assertIn('Task: provider_status', text)
+        self.assertIn('Provider name: ollama', text)
+        self.assertIn('Configured model: qwen2.5:72b-instruct', text)
+        self.assertIn('- gemma4:31b', text)
+
     def test_render_analysis_result_formats_error_state(self):
         from viv_ai.ui.render import render_analysis_result
 
