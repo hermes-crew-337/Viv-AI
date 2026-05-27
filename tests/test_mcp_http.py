@@ -248,6 +248,124 @@ class McpHttpTransportTests(unittest.TestCase):
         finally:
             os.environ.pop('VIV_AI_MCP_API_KEY', None)
 
+    def test_http_server_enforces_request_size_limits(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_max_request_size': 100,  # Very small limit for testing
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send a request that's too large
+            large_request = 'a' * 200  # 200 bytes, exceeds 100 byte limit
+            conn.request(
+                'POST',
+                '/mcp',
+                body=large_request,
+                headers={'Content-Type': 'application/json', 'Content-Length': '200'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 413)
+            self.assertEqual(payload['error']['code'], 413)
+            self.assertIn('request entity too large', payload['error']['message'])
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_accepts_requests_under_size_limit(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_max_request_size': 1000,  # Larger limit
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send a request that's under the limit
+            small_request = json.dumps({'id': 1, 'method': 'ping', 'params': {}})
+            conn.request(
+                'POST',
+                '/mcp',
+                body=small_request,
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(payload['result'], {})
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_handles_missing_content_length(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_max_request_size': 1000,
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            # Send a request without Content-Length header
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 1, 'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(payload['result'], {})
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_uses_config_request_size_limit(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_max_request_size': 500,
+        })
+        server = VivAIMcpServer()
+        httpd = create_http_server(server, config=config)
+        info = httpd.vivai_http_info()
+
+        self.assertEqual(info['max_request_size'], 500)
+
     def test_http_shutdown_request_stops_transport(self):
         from viv_ai.mcp.http_transport import create_http_server
         from viv_ai.mcp.server import VivAIMcpServer

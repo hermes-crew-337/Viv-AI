@@ -24,6 +24,7 @@ class AiConfig:
     mcp_http_bind_port: int = 0
     mcp_http_auth_token_env: Optional[str] = None
     mcp_http_api_key_env: Optional[str] = None
+    mcp_http_max_request_size: int = 1024 * 1024  # 1MB default
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
     def validate(self) -> list[Dict[str, str]]:
@@ -69,6 +70,7 @@ class AiConfig:
             'mcp_http_bind_port': self.mcp_http_bind_port,
             'mcp_http_auth_token_env': self.mcp_http_auth_token_env,
             'mcp_http_api_key_env': self.mcp_http_api_key_env,
+            'mcp_http_max_request_size': self.mcp_http_max_request_size,
             'providers': {name: cfg.to_dict() for name, cfg in self.providers.items()},
         }
 
@@ -97,6 +99,7 @@ class AiConfig:
             mcp_http_bind_port=int(data.get('mcp_http_bind_port', 0)),
             mcp_http_auth_token_env=data.get('mcp_http_auth_token_env'),
             mcp_http_api_key_env=data.get('mcp_http_api_key_env'),
+            mcp_http_max_request_size=int(data.get('mcp_http_max_request_size', 1024 * 1024)),
             providers=providers,
         )
 

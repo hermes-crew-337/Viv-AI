@@ -41,12 +41,13 @@ def _resolve_auth(auth_token: Optional[str] = None, auth_token_env: Optional[str
     return token, token_env, key, key_env
 
 
-def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: int = 0, path: str = '/mcp', auth_token: Optional[str] = None, auth_token_env: Optional[str] = None, api_key: Optional[str] = None, api_key_env: Optional[str] = None, config: Optional[AiConfig] = None) -> ThreadingHTTPServer:
+def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: int = 0, path: str = '/mcp', auth_token: Optional[str] = None, auth_token_env: Optional[str] = None, api_key: Optional[str] = None, api_key_env: Optional[str] = None, max_request_size: Optional[int] = None, config: Optional[AiConfig] = None) -> ThreadingHTTPServer:
     if config is not None:
         host = config.mcp_http_bind_host
         port = config.mcp_http_bind_port
         auth_token_env = config.mcp_http_auth_token_env
         api_key_env = config.mcp_http_api_key_env
+        max_request_size = config.mcp_http_max_request_size
     auth_token, auth_token_env, api_key, api_key_env = _resolve_auth(auth_token=auth_token, auth_token_env=auth_token_env, api_key=api_key, api_key_env=api_key_env)
 
     class Handler(BaseHTTPRequestHandler):
@@ -86,11 +87,30 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             self._write_json(401, _error_response(None, 401, 'unauthorized'))
             return False
 
+        def _check_request_size(self) -> bool:
+            """Check if the request size is within limits."""
+            if max_request_size is None:
+                return True
+            
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+            except ValueError:
+                self._write_json(400, _error_response(None, 400, 'invalid content-length'))
+                return False
+            
+            if length > max_request_size:
+                self._write_json(413, _error_response(None, 413, f'request entity too large: {length} bytes exceeds {max_request_size} bytes limit'))
+                return False
+            
+            return True
+
         def do_POST(self) -> None:
             if self.path != path:
                 self._write_json(404, _error_response(None, 404, f'not found: {self.path}'))
                 return
             if not self._check_auth():
+                return
+            if not self._check_request_size():
                 return
             try:
                 length = int(self.headers.get('Content-Length', '0'))
@@ -124,6 +144,7 @@ def create_http_server(server: VivAIMcpServer, host: str = '127.0.0.1', port: in
             'auth_required': auth_token is not None or api_key is not None,
             'auth_token_env': auth_token_env,
             'api_key_env': api_key_env,
+            'max_request_size': max_request_size,
         }
 
     httpd.vivai_http_info = vivai_http_info  # type: ignore[attr-defined]
@@ -137,6 +158,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--path', default='/mcp')
     parser.add_argument('--auth-token-env', default=None)
     parser.add_argument('--api-key-env', default=None)
+    parser.add_argument('--max-request-size', type=int, default=1024*1024, help='Maximum request size in bytes (default: 1MB)')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     return parser
 
@@ -156,6 +178,7 @@ def main(argv: Optional[Iterable[str]] = None, server: Optional[VivAIMcpServer] 
         path=args.path,
         auth_token_env=args.auth_token_env,
         api_key_env=args.api_key_env,
+        max_request_size=args.max_request_size,
         config=config,
     )
     try:

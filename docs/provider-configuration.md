@@ -204,7 +204,8 @@ Example using bearer token authentication:
 {
   "mcp_http_bind_host": "127.0.0.1",
   "mcp_http_bind_port": 8765,
-  "mcp_http_auth_token_env": "VIV_AI_MCP_TOKEN"
+  "mcp_http_auth_token_env": "VIV_AI_MCP_TOKEN",
+  "mcp_http_max_request_size": 1048576
 }
 ```
 
@@ -214,7 +215,8 @@ Example using API key authentication:
 {
   "mcp_http_bind_host": "127.0.0.1",
   "mcp_http_bind_port": 8765,
-  "mcp_http_api_key_env": "VIV_AI_MCP_API_KEY"
+  "mcp_http_api_key_env": "VIV_AI_MCP_API_KEY",
+  "mcp_http_max_request_size": 1048576
 }
 ```
 
@@ -262,6 +264,12 @@ Fix:
 Fix:
 - export the env var named by `mcp_http_auth_token_env` or `mcp_http_api_key_env`
 - then restart `viv-ai-mcp-http`
+
+### HTTP request too large
+
+Fix:
+- Check the `mcp_http_max_request_size` configuration value
+- Increase the limit if needed, or reduce the request size
 
 ## Related docs
 

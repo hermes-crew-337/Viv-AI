@@ -82,6 +82,9 @@ viv-ai-mcp-http --host 127.0.0.1 --port 8765 --auth-token-env VIV_AI_MCP_TOKEN
 # Using API key authentication
 export VIV_AI_MCP_API_KEY=replace-me
 viv-ai-mcp-http --host 127.0.0.1 --port 8765 --api-key-env VIV_AI_MCP_API_KEY
+
+# With request size limit (default is 1MB)
+viv-ai-mcp-http --host 127.0.0.1 --port 8765 --max-request-size 2048
 ```
 
 Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with either:
