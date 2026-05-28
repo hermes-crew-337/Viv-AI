@@ -455,6 +455,211 @@ class McpHttpTransportTests(unittest.TestCase):
             httpd.server_close()
             thread.join(timeout=5)
 
+    def test_http_server_rate_limiting_allows_requests_under_limit(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_rate_limit': 5,  # 5 requests per window
+            'mcp_http_rate_limit_window': 60,  # 60 seconds
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            
+            # Send 5 requests, all should be allowed
+            for i in range(5):
+                conn.request(
+                    'POST',
+                    '/mcp',
+                    body=json.dumps({'id': i, 'method': 'ping', 'params': {}}),
+                    headers={'Content-Type': 'application/json'},
+                )
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(payload['result'], {})
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_rate_limiting_blocks_requests_over_limit(self):
+        import time
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_rate_limit': 2,  # 2 requests per window
+            'mcp_http_rate_limit_window': 60,  # 60 seconds
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            
+            # Send 2 requests, both should be allowed
+            for i in range(2):
+                conn.request(
+                    'POST',
+                    '/mcp',
+                    body=json.dumps({'id': i, 'method': 'ping', 'params': {}}),
+                    headers={'Content-Type': 'application/json'},
+                )
+                resp = conn.getresponse()
+                payload = json.loads(resp.read())
+                self.assertEqual(resp.status, 200)
+                self.assertEqual(payload['result'], {})
+            
+            # Send a 3rd request, should be blocked
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 3, 'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 429)
+            self.assertIn('error', payload)
+            self.assertEqual(payload['error']['code'], 429)
+            self.assertIn('too many requests', payload['error']['message'])
+            self.assertIn('Retry-After', resp.headers)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_rate_limiting_resets_after_window(self):
+        import time
+        from unittest.mock import patch
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import RateLimiter, create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_rate_limit': 1,  # 1 request per window
+            'mcp_http_rate_limit_window': 1,  # 1 second window for testing
+        })
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        httpd = create_http_server(server, config=config)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = httpd.server_address
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            
+            # Send 1 request, should be allowed
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 1, 'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(payload['result'], {})
+            
+            # Send another request immediately, should be blocked
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 2, 'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 429)
+            
+            # Wait for window to reset
+            time.sleep(1.1)
+            
+            # Send another request, should be allowed again
+            conn.request(
+                'POST',
+                '/mcp',
+                body=json.dumps({'id': 3, 'method': 'ping', 'params': {}}),
+                headers={'Content-Type': 'application/json'},
+            )
+            resp = conn.getresponse()
+            payload = json.loads(resp.read())
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(payload['result'], {})
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+    def test_http_server_uses_config_rate_limit(self):
+        from viv_ai.config import AiConfig
+        from viv_ai.mcp.http_transport import create_http_server
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        config = AiConfig.from_dict({
+            'mcp_http_bind_host': '127.0.0.1',
+            'mcp_http_bind_port': 0,
+            'mcp_http_rate_limit': 100,
+            'mcp_http_rate_limit_window': 300,
+        })
+        server = VivAIMcpServer()
+        httpd = create_http_server(server, config=config)
+        info = httpd.vivai_http_info()
+
+        self.assertEqual(info['rate_limit'], 100)
+        self.assertEqual(info['rate_limit_window'], 300)
+
+    def test_rate_limiter_client_key_identification(self):
+        from unittest.mock import Mock
+        from viv_ai.mcp.http_transport import RateLimiter
+
+        rate_limiter = RateLimiter(10, 60)
+        
+        # Mock handler with IP address
+        handler1 = Mock()
+        handler1.client_address = ('192.168.1.1', 12345)
+        handler1.headers.get.return_value = ''
+        
+        # Mock handler with API key in Authorization header
+        handler2 = Mock()
+        handler2.client_address = ('192.168.1.2', 12346)
+        handler2.headers.get.side_effect = lambda key, default='': (
+            'Bearer test-api-key' if key == 'Authorization' else ''
+        )
+        
+        # Mock handler with API key in X-API-Key header
+        handler3 = Mock()
+        handler3.client_address = ('192.168.1.3', 12347)
+        handler3.headers.get.side_effect = lambda key, default='': (
+            'test-api-key-2' if key == 'X-API-Key' else (
+                '' if key == 'Authorization' else default
+            )
+        )
+        
+        # Test that different clients get different keys
+        key1 = rate_limiter._get_client_key(handler1)
+        key2 = rate_limiter._get_client_key(handler2)
+        key3 = rate_limiter._get_client_key(handler3)
+        
+        self.assertEqual(key1, 'ip:192.168.1.1')
+        self.assertEqual(key2, 'key:test-api-key')
+        self.assertEqual(key3, 'key:test-api-key-2')
+
     def test_http_shutdown_request_stops_transport(self):
         from viv_ai.mcp.http_transport import create_http_server
         from viv_ai.mcp.server import VivAIMcpServer
