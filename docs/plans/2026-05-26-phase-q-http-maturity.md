@@ -134,55 +134,53 @@ Step 4: Commit
 
 ---
 
-## Task 5: Add comprehensive compatibility tests
-
-Objective: Ensure compatibility with various MCP clients.
-
-Files:
-- Create: `tests/test_mcp_http_compatibility.py`
-
-Step 1: Test with different HTTP clients
-- curl
-- mcp-cli
-- Hermes
-- Claude Desktop (if available)
-
-Step 2: Test different auth methods
-- No auth
-- Bearer token
-- API key
-
-Step 3: Test error scenarios
-- Invalid requests
-- Malformed JSON
-- Unsupported methods
-
-Step 4: Commit
-`git commit -am "test: add comprehensive HTTP compatibility tests"`
-
----
-
-## Task 6: Add transport configuration validation
-
-Objective: Add validation for HTTP transport configuration.
-
-Files:
-- Modify: `src/viv_ai/config.py`
-- Test: `tests/test_config.py`
-
-Step 1: Add HTTP transport config validation
-- Validate host format
-- Validate port range
-- Validate path format
-- Validate auth configuration
-
-Step 2: Add validation tests
-- Test valid configurations
-- Test invalid configurations
-- Test edge cases
-
-Step 3: Commit
-`git commit -am "feat: add HTTP transport configuration validation"`
+|## Task 5: ~~Add comprehensive compatibility tests~~ ✅ DONE
+|
+|Objective: Ensure compatibility with various MCP clients.
+|
+|Files:
+|- Create: `tests/test_mcp_http_compatibility.py` — 22 tests covering no-auth, bearer token, API key, GET /healthz, custom paths, invalid paths, Content-Length validation, end-to-end MCP flow (initialize → tools/list → tools/call → shutdown), server/info, request ID tracing, rate limiter IP isolation, rate limiter hybrid key, concurrent clients, env var resolution, and missing env var errors.
+|
+|Step 1: Test with different HTTP clients
+|- Test no-auth mode
+|- Test bearer token auth (standard and invalid)
+|- Test API key auth (X-API-Key and Bearer header)
+|
+|Step 2: Test different auth methods
+|- No auth
+|- Bearer token
+|- API key
+|
+|Step 3: Test error scenarios
+|- Invalid requests, malformed JSON, unsupported methods
+|- GET on unknown path, POST on unknown path
+|- Invalid Content-Length header
+|
+|Step 4: Commit
+|`git commit -am "test: add comprehensive HTTP compatibility tests"`
+|
+|---
+|
+|## Task 6: ~~Add transport configuration validation~~ ✅ DONE
+|
+|Objective: Add validation for HTTP transport configuration.
+|
+|Files:
+|- Modify: `src/viv_ai/config.py` — extend AiConfig.validate() with host, port, request size, rate limit, rate limit window, auth token env, and API key env validation
+|- Test: `tests/test_config.py` — 22 new tests in PhaseQTransportConfigValidationTests class
+|
+|Step 1: Add HTTP transport config validation
+|- Validate host format (non-empty, non-whitespace)
+|- Validate port range (0-65535)
+|- Validate request size (must be positive)
+|- Validate rate limit (non-negative) and rate limit window (positive)
+|- Validate auth env var names (non-empty when set)
+|
+|Step 2: Add validation tests
+|- 22 tests covering valid defaults, edge cases, and invalid configs
+|
+|Step 3: Commit
+|`git commit -am "feat: add HTTP transport configuration validation"`
 
 ---
 

@@ -85,6 +85,14 @@ class ReviewApplyPanel:
             self._load_current()
         return result
 
+    def skip_current(self) -> bool:
+        """Skip (remove) the current item from the queue without applying."""
+        if not self._queue:
+            return False
+        self._queue.pop(0)
+        self._load_current()
+        return True
+
     def apply_all(self, approved: bool = False) -> Dict[str, Any]:
         if not self._queue:
             return {'applied': False, 'results': [], 'reason': 'no staged suggestions'}

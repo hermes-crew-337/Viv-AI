@@ -57,6 +57,70 @@ class AiConfig:
                     'message': f'provider {name!r} has no model configured',
                     'hint': hint,
                 })
+
+        # --- HTTP transport configuration validation ---
+
+        # Host validation
+        host = self.mcp_http_bind_host
+        if not host or not isinstance(host, str) or not host.strip():
+            issues.append({
+                'field': 'mcp_http_bind_host',
+                'message': 'HTTP bind host must be a non-empty string',
+                'hint': 'Set to a valid IP address (e.g. 127.0.0.1, 0.0.0.0) or hostname.',
+            })
+
+        # Port validation
+        port = self.mcp_http_bind_port
+        if not isinstance(port, int) or port < 0 or port > 65535:
+            issues.append({
+                'field': 'mcp_http_bind_port',
+                'message': f'HTTP bind port must be an integer between 0 and 65535, got {port!r}',
+                'hint': 'Use 0 for OS-assigned ephemeral port, or a specific port (1024-65535 for non-root).',
+            })
+
+        # Request size validation
+        max_size = self.mcp_http_max_request_size
+        if isinstance(max_size, int) and max_size <= 0:
+            issues.append({
+                'field': 'mcp_http_max_request_size',
+                'message': f'HTTP max request size must be positive, got {max_size}',
+                'hint': 'Set to a value in bytes (e.g. 1048576 for 1MB).',
+            })
+
+        # Rate limit validation
+        rate_limit = self.mcp_http_rate_limit
+        if isinstance(rate_limit, int) and rate_limit < 0:
+            issues.append({
+                'field': 'mcp_http_rate_limit',
+                'message': f'HTTP rate limit must be non-negative, got {rate_limit}',
+                'hint': 'Set to 0 to disable rate limiting, or a positive number of requests per window.',
+            })
+
+        rate_window = self.mcp_http_rate_limit_window
+        if isinstance(rate_window, int) and rate_window <= 0:
+            issues.append({
+                'field': 'mcp_http_rate_limit_window',
+                'message': f'HTTP rate limit window must be positive, got {rate_window}',
+                'hint': 'Set the time window in seconds for the rate limit counter.',
+            })
+
+        # Auth config validation
+        token_env = self.mcp_http_auth_token_env
+        if token_env is not None and (not isinstance(token_env, str) or not token_env.strip()):
+            issues.append({
+                'field': 'mcp_http_auth_token_env',
+                'message': 'HTTP auth token env var name must be a non-empty string when set',
+                'hint': 'Set to the name of an environment variable containing the bearer token.',
+            })
+
+        key_env = self.mcp_http_api_key_env
+        if key_env is not None and (not isinstance(key_env, str) or not key_env.strip()):
+            issues.append({
+                'field': 'mcp_http_api_key_env',
+                'message': 'HTTP API key env var name must be a non-empty string when set',
+                'hint': 'Set to the name of an environment variable containing the API key.',
+            })
+
         return issues
 
     def to_dict(self) -> Dict[str, Any]:

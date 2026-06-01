@@ -122,3 +122,176 @@ class PhaseAConfigTests(unittest.TestCase):
 
         self.assertEqual(cfg.providers['ollama'].endpoint, 'http://127.0.0.1:11434')
         self.assertEqual(cfg.providers['ollama'].model, 'qwen2.5:72b-instruct')
+
+
+class PhaseQTransportConfigValidationTests(unittest.TestCase):
+    """Transport configuration validation tests for Phase Q."""
+
+    # --- Host validation ---
+    def test_validate_accepts_default_host(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(providers={})
+        issues = cfg.validate()
+        host_issues = [i for i in issues if i['field'] == 'mcp_http_bind_host']
+        self.assertEqual(host_issues, [])
+
+    def test_validate_rejects_empty_host(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_host='', providers={})
+        issues = cfg.validate()
+        host_issues = [i for i in issues if i['field'] == 'mcp_http_bind_host']
+        self.assertEqual(len(host_issues), 1)
+
+    def test_validate_rejects_whitespace_host(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_host='   ', providers={})
+        issues = cfg.validate()
+        host_issues = [i for i in issues if i['field'] == 'mcp_http_bind_host']
+        self.assertEqual(len(host_issues), 1)
+
+    # --- Port validation ---
+    def test_validate_accepts_valid_port(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_port=8080, providers={})
+        issues = cfg.validate()
+        port_issues = [i for i in issues if i['field'] == 'mcp_http_bind_port']
+        self.assertEqual(port_issues, [])
+
+    def test_validate_accepts_ephemeral_port_zero(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_port=0, providers={})
+        issues = cfg.validate()
+        port_issues = [i for i in issues if i['field'] == 'mcp_http_bind_port']
+        self.assertEqual(port_issues, [])
+
+    def test_validate_rejects_negative_port(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_port=-1, providers={})
+        issues = cfg.validate()
+        port_issues = [i for i in issues if i['field'] == 'mcp_http_bind_port']
+        self.assertEqual(len(port_issues), 1)
+
+    def test_validate_rejects_port_out_of_range(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_bind_port=99999, providers={})
+        issues = cfg.validate()
+        port_issues = [i for i in issues if i['field'] == 'mcp_http_bind_port']
+        self.assertEqual(len(port_issues), 1)
+
+    # --- Request size validation ---
+    def test_validate_accepts_default_request_size(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(providers={})
+        issues = cfg.validate()
+        size_issues = [i for i in issues if i['field'] == 'mcp_http_max_request_size']
+        self.assertEqual(size_issues, [])
+
+    def test_validate_rejects_non_positive_request_size(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_max_request_size=0, providers={})
+        issues = cfg.validate()
+        size_issues = [i for i in issues if i['field'] == 'mcp_http_max_request_size']
+        self.assertEqual(len(size_issues), 1)
+
+    def test_validate_rejects_negative_request_size(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_max_request_size=-100, providers={})
+        issues = cfg.validate()
+        size_issues = [i for i in issues if i['field'] == 'mcp_http_max_request_size']
+        self.assertEqual(len(size_issues), 1)
+
+    # --- Rate limit validation ---
+    def test_validate_accepts_default_rate_limit(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(providers={})
+        issues = cfg.validate()
+        rl_issues = [i for i in issues if i['field'] == 'mcp_http_rate_limit']
+        self.assertEqual(rl_issues, [])
+
+    def test_validate_accepts_zero_rate_limit_disabled(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_rate_limit=0, providers={})
+        issues = cfg.validate()
+        rl_issues = [i for i in issues if i['field'] == 'mcp_http_rate_limit']
+        self.assertEqual(rl_issues, [])
+
+    def test_validate_rejects_negative_rate_limit(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_rate_limit=-5, providers={})
+        issues = cfg.validate()
+        rl_issues = [i for i in issues if i['field'] == 'mcp_http_rate_limit']
+        self.assertEqual(len(rl_issues), 1)
+
+    def test_validate_rejects_non_positive_rate_limit_window(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_rate_limit_window=0, providers={})
+        issues = cfg.validate()
+        rw_issues = [i for i in issues if i['field'] == 'mcp_http_rate_limit_window']
+        self.assertEqual(len(rw_issues), 1)
+
+    def test_validate_rejects_negative_rate_limit_window(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_rate_limit_window=-10, providers={})
+        issues = cfg.validate()
+        rw_issues = [i for i in issues if i['field'] == 'mcp_http_rate_limit_window']
+        self.assertEqual(len(rw_issues), 1)
+
+    # --- Auth env var name validation ---
+    def test_validate_accepts_none_auth_token_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_auth_token_env=None, providers={})
+        issues = cfg.validate()
+        token_issues = [i for i in issues if i['field'] == 'mcp_http_auth_token_env']
+        self.assertEqual(token_issues, [])
+
+    def test_validate_accepts_valid_auth_token_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_auth_token_env='VIV_AI_TOKEN', providers={})
+        issues = cfg.validate()
+        token_issues = [i for i in issues if i['field'] == 'mcp_http_auth_token_env']
+        self.assertEqual(token_issues, [])
+
+    def test_validate_rejects_empty_auth_token_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_auth_token_env='', providers={})
+        issues = cfg.validate()
+        token_issues = [i for i in issues if i['field'] == 'mcp_http_auth_token_env']
+        self.assertEqual(len(token_issues), 1)
+
+    def test_validate_accepts_none_api_key_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_api_key_env=None, providers={})
+        issues = cfg.validate()
+        key_issues = [i for i in issues if i['field'] == 'mcp_http_api_key_env']
+        self.assertEqual(key_issues, [])
+
+    def test_validate_accepts_valid_api_key_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_api_key_env='VIV_AI_API_KEY', providers={})
+        issues = cfg.validate()
+        key_issues = [i for i in issues if i['field'] == 'mcp_http_api_key_env']
+        self.assertEqual(key_issues, [])
+
+    def test_validate_rejects_empty_api_key_env(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(mcp_http_api_key_env='', providers={})
+        issues = cfg.validate()
+        key_issues = [i for i in issues if i['field'] == 'mcp_http_api_key_env']
+        self.assertEqual(len(key_issues), 1)
+
+    # --- Default config produces no transport issues ---
+    def test_validate_default_config_has_no_transport_issues(self):
+        from viv_ai.config import AiConfig
+        cfg = AiConfig(providers={})
+        issues = cfg.validate()
+        transport_fields = {
+            'mcp_http_bind_host',
+            'mcp_http_bind_port',
+            'mcp_http_max_request_size',
+            'mcp_http_rate_limit',
+            'mcp_http_rate_limit_window',
+            'mcp_http_auth_token_env',
+            'mcp_http_api_key_env',
+        }
+        transport_issues = [i for i in issues if i['field'] in transport_fields]
+        self.assertEqual(transport_issues, [])
