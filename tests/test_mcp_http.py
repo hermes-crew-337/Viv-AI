@@ -698,6 +698,65 @@ class McpHttpTransportTests(unittest.TestCase):
         self.assertEqual(args.config, '/tmp/viv-ai.json')
         self.assertEqual(args.path, '/custom')
 
+    def test_http_server_bootstrap_from_config_file(self):
+        """Verify HTTP server bootstraps from a JSON config file with auth settings."""
+        import json
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, 'http-config.json')
+            config_data = {
+                'mcp_http_bind_host': '127.0.0.1',
+                'mcp_http_bind_port': 0,
+                'mcp_http_auth_token_env': 'VIV_AI_HTTP_TEST_TOKEN',
+                'mcp_http_max_request_size': 512,
+            }
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f)
+
+            os.environ['VIV_AI_HTTP_TEST_TOKEN'] = 'test-bearer-token'
+            os.environ.pop('VIV_AI_CONFIG', None)
+            try:
+                from viv_ai.config import AiConfig
+                from viv_ai.mcp.http_transport import create_http_server
+                from viv_ai.mcp.server import VivAIMcpServer
+
+                config = AiConfig.load(config_path)
+                server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+                httpd = create_http_server(server, config=config)
+                info = httpd.vivai_http_info()
+
+                self.assertEqual(info['host'], '127.0.0.1')
+                self.assertIsInstance(info['port'], int)
+                self.assertGreater(info['port'], 0)
+                self.assertEqual(info['auth_token_env'], 'VIV_AI_HTTP_TEST_TOKEN')
+                self.assertEqual(info['auth_required'], True)
+                self.assertEqual(info['max_request_size'], 512)
+
+                # Verify the server actually works
+                thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    host, port = httpd.server_address
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request(
+                        'POST',
+                        '/mcp',
+                        body=json.dumps({'id': 1, 'method': 'ping', 'params': {}}),
+                        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer test-bearer-token'},
+                    )
+                    resp = conn.getresponse()
+                    payload = json.loads(resp.read())
+                    self.assertEqual(resp.status, 200)
+                    self.assertEqual(payload['result'], {})
+                finally:
+                    httpd.shutdown()
+                    httpd.server_close()
+                    thread.join(timeout=5)
+            finally:
+                os.environ.pop('VIV_AI_HTTP_TEST_TOKEN', None)
+
 
 if __name__ == '__main__':
     unittest.main()
