@@ -8,6 +8,16 @@ class FakeVW:
     def getMeta(self, name):
         return self.meta.get(name)
 
+    def getFunctions(self):
+        return [0x401000, 0x402000, 0x403000]
+
+    def getName(self, va):
+        names = {0x401000: 'main', 0x402000: 'helper', 0x403000: 'leaf'}
+        return names.get(va)
+
+    def getFunctionBlocks(self, fva):
+        return [(fva, 16, fva)]
+
 
 class FakeAnalysisService:
     def __init__(self):
@@ -178,6 +188,25 @@ class McpAiToolTests(unittest.TestCase):
         self.assertEqual(result['data']['results'][1]['fva'], '0x00401050')
         self.assertIn('analyzed 2/2', result['summary'])
         self.assertEqual(service.calls[0]['fvas'], [0x401000, 0x401050])
+
+    def test_find_functions_in_registry(self):
+        from viv_ai.mcp.tools import build_default_registry
+
+        registry = build_default_registry()
+
+        self.assertIn('find_functions', registry)
+
+    def test_find_functions_via_mcp(self):
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        workspace_id = server.call_tool('workspace_open', path='/tmp/sample.bin')['data']['workspace_id']
+
+        result = server.call_tool('find_functions', workspace_id=workspace_id)
+
+        self.assertTrue(result['ok'])
+        self.assertIn('functions', result['data'])
+        self.assertIsInstance(result['data']['functions'], list)
 
 
 if __name__ == '__main__':

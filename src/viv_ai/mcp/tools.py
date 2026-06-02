@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 
 from ..apply import apply_comment_suggestion as _apply_comment_suggestion, apply_function_rename as _apply_function_rename
-from ..extractors import extract_binary_overview, extract_function_overview
+from ..extractors import extract_binary_overview, extract_function_overview, find_functions as _find_functions
 from ..graphs import summarize_graph
 from ..symbolik import summarize_symbolik_paths
 from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
@@ -97,6 +97,16 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
         'get_symbolik_summary': {
             'description': 'Return a bounded summary of symbolik paths for a function.',
             'inputSchema': _schema({'workspace_id': workspace_id, 'fva': hex_addr, 'max_paths': max_results, 'max_constraints': max_results, 'max_effects': max_results}, ['workspace_id', 'fva']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'find_functions': {
+            'description': 'Discover functions matching optional filters (name glob, minimum caller count).',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'name_glob': {'type': 'string', 'description': 'Optional fnmatch glob pattern (e.g. "sub_*", "*crypto*", "main").'},
+                'min_callers': {'type': 'integer', 'minimum': 0, 'default': 0, 'description': 'Minimum caller count to include.'},
+                'max_results': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 32, 'description': 'Maximum functions to return.'},
+            }, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'ai_explain_function': {
@@ -288,6 +298,12 @@ def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fv
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_symbolik_summary'}, summary='symbolik summary ready').to_dict()
 
 
+def find_functions(manager: WorkspaceSessionManager, workspace_id: str, name_glob: str | None = None, min_callers: int = 0, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    matches = _find_functions(workspace, name_glob=name_glob, min_callers=min_callers, max_results=max_results)
+    return ToolResponse.ok(workspace_id, 'workspace', {'functions': matches}, provenance={'tool': 'find_functions'}, summary=f'{len(matches)} functions matched').to_dict()
+
+
 def ai_explain_function(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
     result = _analysis_service(manager).analyze_function(workspace, parse_va(fva), options=_options_from_kwargs(kwargs))
@@ -363,6 +379,7 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_function_summary': get_function_summary,
         'get_function_graph': get_function_graph,
         'get_symbolik_summary': get_symbolik_summary,
+        'find_functions': find_functions,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,
         'ai_analyze_functions': ai_analyze_functions,

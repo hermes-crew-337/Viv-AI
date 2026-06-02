@@ -1,3 +1,4 @@
+import fnmatch
 import json
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -186,3 +187,18 @@ def _normalize_api(api: Any) -> Dict[str, Any] | None:
         'name': funcname,
         'arguments': [{'type': argtype, 'name': argname} for argtype, argname in list(callargs)],
     }
+
+
+def find_functions(vw: Any, name_glob: str | None = None, min_callers: int = 0, max_results: int = 32) -> List[Dict[str, Any]]:
+    matches = []
+    for fva in list(vw.getFunctions()):
+        name = _safe_get_name(vw, fva)
+        if name_glob and not fnmatch.fnmatch(name, name_glob):
+            continue
+        stats = _collect_function_stats(vw, fva)
+        if min_callers > 0 and stats['caller_count'] < min_callers:
+            continue
+        matches.append(stats)
+        if len(matches) >= max_results:
+            break
+    return matches

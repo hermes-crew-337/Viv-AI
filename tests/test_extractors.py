@@ -190,6 +190,38 @@ class ExtractorTests(unittest.TestCase):
         self.assertEqual(summary['paths'][0]['constraints'], ['eax == 1'])
         self.assertEqual(summary['truncated']['paths'], 1)
 
+    def test_find_functions_all(self):
+        from viv_ai.extractors import find_functions
+
+        result = find_functions(FakeWorkspace())
+
+        names = [item['name'] for item in result]
+        self.assertEqual(names, ['main', 'helper', 'leaf'])
+        self.assertEqual(len(result), 3)
+
+    def test_find_functions_name_glob(self):
+        from viv_ai.extractors import find_functions
+
+        result = find_functions(FakeWorkspace(), name_glob='*el*')
+
+        names = [item['name'] for item in result]
+        self.assertEqual(names, ['helper'])
+
+    def test_find_functions_min_callers(self):
+        from viv_ai.extractors import find_functions
+
+        result = find_functions(FakeWorkspace(), min_callers=2)
+
+        names = [item['name'] for item in result]
+        self.assertEqual(names, ['main'])
+
+    def test_find_functions_max_results(self):
+        from viv_ai.extractors import find_functions
+
+        result = find_functions(FakeWorkspace(), max_results=2)
+
+        self.assertEqual(len(result), 2)
+
 
 if __name__ == '__main__':
     unittest.main()
