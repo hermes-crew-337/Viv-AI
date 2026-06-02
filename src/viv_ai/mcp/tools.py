@@ -109,6 +109,14 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
             'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id'], additional_properties=True),
             'annotations': {'readOnlyHint': True},
         },
+        'ai_analyze_functions': {
+            'description': 'Batch AI analysis of multiple functions in one request.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'fvas': {'type': 'array', 'items': hex_addr, 'description': 'List of function VAs to analyze (hex strings or integers).'},
+            }, ['workspace_id', 'fvas']),
+            'annotations': {'readOnlyHint': True},
+        },
         'list_provider_models': {
             'description': 'Report the configured provider, current selected model, discovered available models, and actionable configuration issues.',
             'inputSchema': _schema({'provider_name': {'type': 'string', 'description': 'Optional configured provider name. Defaults to the server default provider.'}}, []),
@@ -294,6 +302,15 @@ def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **k
     return ToolResponse.ok(workspace_id, 'binary', result, provenance={'tool': 'ai_summarize_binary'}, summary=summary).to_dict()
 
 
+def ai_analyze_functions(manager: WorkspaceSessionManager, workspace_id: str, fvas: list[Any], **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    parsed = [parse_va(fva) for fva in fvas]
+    options = _options_from_kwargs(kwargs, 'workspace_id', 'fvas')
+    results = _analysis_service(manager).analyze_functions(workspace, parsed, options=options)
+    succeeded = sum(1 for r in results if 'error' not in r)
+    return ToolResponse.ok(workspace_id, 'function', {'results': results}, provenance={'tool': 'ai_analyze_functions'}, summary=f'analyzed {succeeded}/{len(results)} functions').to_dict()
+
+
 def list_provider_models(manager: WorkspaceSessionManager, provider_name: str | None = None, **kwargs) -> Dict[str, Any]:
     result = _analysis_service(manager).provider_status(provider_name=provider_name)
     summary = f"provider {result['provider_name']} has {len(result['available_models'])} discovered models"
@@ -348,6 +365,7 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_symbolik_summary': get_symbolik_summary,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,
+        'ai_analyze_functions': ai_analyze_functions,
         'list_provider_models': list_provider_models,
         'propose_function_rename': propose_function_rename,
         'propose_comment': propose_comment,

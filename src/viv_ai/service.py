@@ -62,6 +62,21 @@ class AnalysisService:
         payload = extract_function_overview(vw, fva)
         return self._run_task('function_summary', payload, options)
 
+    def analyze_functions(self, vw: Any, fvas: list[int], options: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+        results = []
+        for fva in fvas:
+            try:
+                result = self.analyze_function(vw, fva, options)
+                result['fva'] = f'0x{fva:08x}'
+                results.append(result)
+            except AnalysisError as exc:
+                results.append({
+                    'fva': f'0x{fva:08x}',
+                    'error': str(exc),
+                    'task_type': 'function_summary',
+                })
+        return results
+
     def analyze_graph(self, graph: Any, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = summarize_graph(graph)
         return self._run_task('graph_summary', payload, options)
