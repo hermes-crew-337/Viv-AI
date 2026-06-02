@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 
 from ..apply import apply_comment_suggestion as _apply_comment_suggestion, apply_function_rename as _apply_function_rename
+from ..campaign import campaign_renames as _campaign_renames, campaign_comments as _campaign_comments
 from ..extractors import extract_binary_overview, extract_function_overview, find_functions as _find_functions
 from ..graphs import summarize_graph
 from ..symbolik import summarize_symbolik_paths
@@ -150,6 +151,54 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
         'apply_comment': {
             'description': 'Apply a comment if server-side mutation policy permits it.',
             'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'comment': {'type': 'string', 'description': 'Comment text to apply.'}}, ['workspace_id', 'va', 'comment']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'propose_campaign_renames': {
+            'description': 'Batch propose function renames for multiple functions.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'renames': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {'fva': hex_addr, 'new_name': {'type': 'string'}},
+                    'required': ['fva', 'new_name'],
+                }, 'description': 'List of (fva, new_name) pairs.'},
+            }, ['workspace_id', 'renames']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'apply_campaign_renames': {
+            'description': 'Batch apply function renames if server-side mutation policy permits.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'renames': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {'fva': hex_addr, 'new_name': {'type': 'string'}},
+                    'required': ['fva', 'new_name'],
+                }, 'description': 'List of (fva, new_name) pairs.'},
+            }, ['workspace_id', 'renames']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'propose_campaign_comments': {
+            'description': 'Batch propose comments for multiple addresses.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'comments': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {'va': hex_addr, 'comment': {'type': 'string'}},
+                    'required': ['va', 'comment'],
+                }, 'description': 'List of (va, comment) pairs.'},
+            }, ['workspace_id', 'comments']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'apply_campaign_comments': {
+            'description': 'Batch apply comments if server-side mutation policy permits.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'comments': {'type': 'array', 'items': {
+                    'type': 'object',
+                    'properties': {'va': hex_addr, 'comment': {'type': 'string'}},
+                    'required': ['va', 'comment'],
+                }, 'description': 'List of (va, comment) pairs.'},
+            }, ['workspace_id', 'comments']),
             'annotations': {'readOnlyHint': False},
         },
     }
@@ -363,6 +412,44 @@ def apply_comment(manager: WorkspaceSessionManager, workspace_id: str, va: Any, 
     return ToolResponse.ok(workspace_id, 'address', result, provenance={'tool': 'apply_comment', 'mutation_policy': policy.value}, summary='comment applied').to_dict()
 
 
+def propose_campaign_renames(manager: WorkspaceSessionManager, workspace_id: str, renames: list[dict], **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    workspace = manager.get_workspace(workspace_id)
+    parsed = [{'fva': parse_va(item['fva']), 'new_name': str(item['new_name'])} for item in renames]
+    results = _campaign_renames(workspace, parsed, policy)
+    applied = sum(1 for r in results if r.get('applied'))
+    return ToolResponse.ok(workspace_id, 'function', {'results': results}, provenance={'tool': 'propose_campaign_renames', 'mutation_policy': policy.value}, summary=f'{applied}/{len(results)} renames proposed').to_dict()
+
+
+def apply_campaign_renames(manager: WorkspaceSessionManager, workspace_id: str, renames: list[dict], **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    assert_apply_allowed(policy)
+    workspace = manager.get_workspace(workspace_id)
+    parsed = [{'fva': parse_va(item['fva']), 'new_name': str(item['new_name'])} for item in renames]
+    results = _campaign_renames(workspace, parsed, policy)
+    applied = sum(1 for r in results if r.get('applied'))
+    return ToolResponse.ok(workspace_id, 'function', {'results': results}, provenance={'tool': 'apply_campaign_renames', 'mutation_policy': policy.value}, summary=f'{applied}/{len(results)} renames applied').to_dict()
+
+
+def propose_campaign_comments(manager: WorkspaceSessionManager, workspace_id: str, comments: list[dict], **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    workspace = manager.get_workspace(workspace_id)
+    parsed = [{'va': parse_va(item['va']), 'comment': str(item['comment'])} for item in comments]
+    results = _campaign_comments(workspace, parsed, policy)
+    applied = sum(1 for r in results if r.get('applied'))
+    return ToolResponse.ok(workspace_id, 'address', {'results': results}, provenance={'tool': 'propose_campaign_comments', 'mutation_policy': policy.value}, summary=f'{applied}/{len(results)} comments proposed').to_dict()
+
+
+def apply_campaign_comments(manager: WorkspaceSessionManager, workspace_id: str, comments: list[dict], **kwargs) -> Dict[str, Any]:
+    policy = manager.mutation_policy
+    assert_apply_allowed(policy)
+    workspace = manager.get_workspace(workspace_id)
+    parsed = [{'va': parse_va(item['va']), 'comment': str(item['comment'])} for item in comments]
+    results = _campaign_comments(workspace, parsed, policy)
+    applied = sum(1 for r in results if r.get('applied'))
+    return ToolResponse.ok(workspace_id, 'address', {'results': results}, provenance={'tool': 'apply_campaign_comments', 'mutation_policy': policy.value}, summary=f'{applied}/{len(results)} comments applied').to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -388,4 +475,8 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'propose_comment': propose_comment,
         'apply_function_rename': apply_function_rename,
         'apply_comment': apply_comment,
+        'propose_campaign_renames': propose_campaign_renames,
+        'apply_campaign_renames': apply_campaign_renames,
+        'propose_campaign_comments': propose_campaign_comments,
+        'apply_campaign_comments': apply_campaign_comments,
     }
