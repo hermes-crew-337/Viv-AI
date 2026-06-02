@@ -40,8 +40,45 @@ def _time_limit(seconds: float):
             signal.setitimer(signal.ITIMER_REAL, *previous_timer)
 
 
+# Pre-defined dangerous sinks for bug hunting
+DANGEROUS_SINKS = {
+    # Command injection
+    "system": "Command injection", "popen": "Command injection",
+    "execve": "Command injection", "execl": "Command injection",
+    "execle": "Command injection", "execlp": "Command injection",
+    "execv": "Command injection", "execvp": "Command injection",
+    # Memory corruption
+    "memcpy": "Buffer overflow", "memmove": "Buffer overflow",
+    "strcpy": "Buffer overflow", "strncpy": "Buffer overflow (if length not checked)",
+    "strcat": "Buffer overflow", "strncat": "Buffer overflow (if length not checked)",
+    "sprintf": "Buffer overflow", "vsprintf": "Buffer overflow", "gets": "Buffer overflow",
+    # Format string
+    "printf": "Format string", "fprintf": "Format string", "dprintf": "Format string",
+    "snprintf": "Format string (if user controls format)",
+    "vprintf": "Format string", "vfprintf": "Format string", "vsprintf": "Format string",
+    # Unsafe deserialization
+    "unserialize": "Unsafe deserialization",
+}
+
+ATTACKER_SOURCES = {
+    "argv": "Command-line argument", "environ": "Environment variable",
+    "read": "File descriptor read", "recv": "Network receive",
+    "fgets": "File read", "gets": "Stdin read",
+    "mmap": "Memory-mapped input", "loadFileRaw": "File load",
+}
+
 class VivAIMcpServer:
     def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None):
+        # Provide a default workspace_loader if none given, so the server works standalone
+        if workspace_loader is None:
+            def _default_loader(path: str) -> Any:
+                import vivisect
+                vw = vivisect.VivWorkspace()
+                vw.loadFromFile(path)
+                vw.analyze()
+                return vw
+            workspace_loader = _default_loader
+
         self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy)
         if session_manager is not None:
             if analysis_service is not None:
