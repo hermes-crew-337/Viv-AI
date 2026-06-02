@@ -5,8 +5,8 @@ class FakeVW:
     def __init__(self):
         self.meta = {'Architecture': 'amd64', 'Platform': 'linux', 'Format': 'elf'}
 
-    def getMeta(self, name):
-        return self.meta.get(name)
+    def getMeta(self, name, default=None):
+        return self.meta.get(name, default)
 
     def getFunctions(self):
         return [0x401000, 0x402000, 0x403000]
@@ -207,6 +207,21 @@ class McpAiToolTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertIn('functions', result['data'])
         self.assertIsInstance(result['data']['functions'], list)
+
+    def test_export_analysis_report_via_mcp(self):
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        workspace_id = server.call_tool('workspace_open', path='/tmp/sample.bin')['data']['workspace_id']
+
+        result = server.call_tool('export_analysis_report', workspace_id=workspace_id)
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertIn('metadata', data)
+        self.assertIn('functions', data)
+        self.assertIn('markdown', data)
+        self.assertIn('Binary Analysis Report', data['markdown'])
 
 
 if __name__ == '__main__':

@@ -7,8 +7,8 @@ class FakeVW:
     def __init__(self):
         self.meta = {'Architecture': 'amd64', 'Platform': 'linux', 'Format': 'elf'}
 
-    def getMeta(self, name):
-        return self.meta.get(name)
+    def getMeta(self, name, default=None):
+        return self.meta.get(name, default)
 
 
 class BlockingTool:

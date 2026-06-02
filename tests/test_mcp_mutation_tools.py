@@ -7,8 +7,8 @@ class FakeVW:
         self.calls = []
         self.rename_result = Ellipsis
 
-    def getMeta(self, name):
-        return self.meta.get(name)
+    def getMeta(self, name, default=None):
+        return self.meta.get(name, default)
 
     def makeName(self, va, name):
         self.calls.append(('makeName', va, name))

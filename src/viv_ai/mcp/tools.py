@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict
 from ..apply import apply_comment_suggestion as _apply_comment_suggestion, apply_function_rename as _apply_function_rename
 from ..campaign import campaign_renames as _campaign_renames, campaign_comments as _campaign_comments
 from ..extractors import extract_binary_overview, extract_function_overview, find_functions as _find_functions
+from ..report import generate_report as _generate_report
 from ..graphs import summarize_graph
 from ..symbolik import summarize_symbolik_paths
 from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
@@ -107,6 +108,14 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
                 'name_glob': {'type': 'string', 'description': 'Optional fnmatch glob pattern (e.g. "sub_*", "*crypto*", "main").'},
                 'min_callers': {'type': 'integer', 'minimum': 0, 'default': 0, 'description': 'Minimum caller count to include.'},
                 'max_results': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 32, 'description': 'Maximum functions to return.'},
+            }, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'export_analysis_report': {
+            'description': 'Generate a structured analysis report (metadata + function summaries + markdown).',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'results': {'type': 'array', 'items': {'type': 'object'}, 'default': [], 'description': 'Optional list of analysis results (fva, name, analysis keys) to include.'},
             }, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
@@ -353,6 +362,12 @@ def find_functions(manager: WorkspaceSessionManager, workspace_id: str, name_glo
     return ToolResponse.ok(workspace_id, 'workspace', {'functions': matches}, provenance={'tool': 'find_functions'}, summary=f'{len(matches)} functions matched').to_dict()
 
 
+def export_analysis_report(manager: WorkspaceSessionManager, workspace_id: str, results: list | None = None, **kwargs) -> Dict[str, Any]:
+    workspace = manager.get_workspace(workspace_id)
+    report = _generate_report(workspace, results=results or [])
+    return ToolResponse.ok(workspace_id, 'workspace', report, provenance={'tool': 'export_analysis_report'}, summary='analysis report ready').to_dict()
+
+
 def ai_explain_function(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
     result = _analysis_service(manager).analyze_function(workspace, parse_va(fva), options=_options_from_kwargs(kwargs))
@@ -467,6 +482,7 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_function_graph': get_function_graph,
         'get_symbolik_summary': get_symbolik_summary,
         'find_functions': find_functions,
+        'export_analysis_report': export_analysis_report,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,
         'ai_analyze_functions': ai_analyze_functions,
