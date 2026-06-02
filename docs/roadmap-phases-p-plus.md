@@ -70,6 +70,12 @@ Suggested scope:
 - packaged examples for Hermes, Claude Desktop, and generic MCP clients
 - release checklist and versioned changelog flow
 - CI test matrix for unit/integration/live-optional jobs
+  - **Status: deferred — captured as TODO from Phase P review.**
+  - Split pytest into `unit`, `integration`, and `live` markers
+  - Unit: fast, no deps — runs on every push
+  - Integration: requires Ollama/MATRIX — runs on demand or nightly
+  - Live: requires env var flag — runs manually for provider validation
+  - Add GitHub Actions or similar CI workflow with matrix
 - contributor docs for adding providers/tools/schemas safely
 - long-lived compatibility guidance for Vivisect and Ollama versions
 
