@@ -45,15 +45,21 @@ def paginated(items: Iterable[Dict[str, Any]], offset: int, limit: int) -> Tuple
 def pagination_meta(total: int, offset: int, limit: int, has_more: bool) -> Dict[str, Any]:
     """Build a standard pagination metadata dict.
 
+    Always reports the *effective* offset and limit — negative offsets are
+    clamped to zero, zero/negative limits are clamped to one — so clients
+    never see misleading raw-input values.
+
     Includes total count, current offset/limit, whether more results exist,
     and computed next_offset for convenience.
     """
+    clamped_offset = max(0, int(offset))
+    clamped_limit = max(1, int(limit))
     return {
         'total': total,
-        'offset': offset,
-        'limit': limit,
+        'offset': clamped_offset,
+        'limit': clamped_limit,
         'has_more': has_more,
-        'next_offset': offset + limit if has_more else None,
+        'next_offset': clamped_offset + clamped_limit if has_more else None,
     }
 
 

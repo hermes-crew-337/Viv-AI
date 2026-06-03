@@ -11,7 +11,7 @@ from ..symbolik import summarize_symbolik_paths
 from .formatters import analysis_limits_from_config, paginated, pagination_meta, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
 from .security import assert_apply_allowed
-from .session import WorkspaceSessionManager
+from .session import WorkspaceSessionError, WorkspaceSessionManager
 
 import threading
 import time
@@ -367,8 +367,18 @@ def get_binary_summary(manager: WorkspaceSessionManager, workspace_id: str, **kw
     ).to_dict()
 
 
+def _resolve_workspace(manager: WorkspaceSessionManager, workspace_id: str | None, tool_name: str) -> Any:
+    """Look up a workspace and return it, or raise a clear error."""
+    if not workspace_id:
+        raise RuntimeError(f'{tool_name}: workspace_id is required')
+    try:
+        return manager.get_workspace(workspace_id)
+    except WorkspaceSessionError:
+        raise RuntimeError(f'{tool_name}: workspace not found or not specified: {workspace_id!r}')
+
+
 def get_strings(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_strings')
     items = collect_strings(workspace)
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -376,7 +386,7 @@ def get_strings(manager: WorkspaceSessionManager, workspace_id: str, max_results
 
 
 def get_imports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_imports')
     items = collect_imports(workspace)
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -384,7 +394,7 @@ def get_imports(manager: WorkspaceSessionManager, workspace_id: str, max_results
 
 
 def get_exports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_exports')
     items = collect_exports(workspace)
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -392,7 +402,7 @@ def get_exports(manager: WorkspaceSessionManager, workspace_id: str, max_results
 
 
 def get_names(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_names')
     items = collect_names(workspace)
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -400,7 +410,7 @@ def get_names(manager: WorkspaceSessionManager, workspace_id: str, max_results: 
 
 
 def get_xrefs_to(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_xrefs_to')
     items = collect_xrefs(workspace, parse_va(va), 'to')
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -408,7 +418,7 @@ def get_xrefs_to(manager: WorkspaceSessionManager, workspace_id: str, va: Any, m
 
 
 def get_xrefs_from(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
-    workspace = manager.get_workspace(workspace_id)
+    workspace = _resolve_workspace(manager, workspace_id, 'get_xrefs_from')
     items = collect_xrefs(workspace, parse_va(va), 'from')
     page, has_more = paginated(items, offset, max_results)
     meta = pagination_meta(len(items), offset, max_results, has_more)
@@ -503,7 +513,35 @@ def export_analysis_report(manager: WorkspaceSessionManager, workspace_id: str, 
     return ToolResponse.ok(workspace_id, 'workspace', report, provenance={'tool': 'export_analysis_report'}, summary='analysis report ready').to_dict()
 
 
+def _check_provider_available(manager: WorkspaceSessionManager) -> str | None:
+    """Check if an AI provider is configured and usable.
+
+    Only validates when the service carries a real ``AiConfig`` with a
+    ``providers`` dict.  Duck-typed test fakes (no ``config`` attr) are
+    let through — they will fail on their own if they need a provider.
+
+    Returns None if OK, or a user-facing error message string if not.
+    """
+    service = getattr(manager, 'analysis_service', None)
+    if service is None:
+        return 'analysis service is not configured'
+    config = getattr(service, 'config', None)
+    if config is None:
+        return None  # duck-typed fake — let it fail naturally if needed
+    if not config.providers:
+        return 'no AI providers configured. Set up Ollama or an API provider in config.'
+    name = config.default_provider
+    if not name:
+        return 'no default AI provider configured. Set default_provider in config.'
+    if name not in config.providers:
+        return f'default provider {name!r} is not configured. Check provider definitions in config.'
+    return None
+
+
 def ai_explain_function(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
+    err = _check_provider_available(manager)
+    if err:
+        return ToolResponse.error_response(workspace_id, 'function', err, provenance={'tool': 'ai_explain_function'}).to_dict()
     workspace = manager.get_workspace(workspace_id)
     result = _analysis_service(manager).analyze_function(workspace, parse_va(fva), options=_options_from_kwargs(kwargs))
     summary = result.get('analysis', {}).get('summary', 'function explanation ready')
@@ -511,6 +549,9 @@ def ai_explain_function(manager: WorkspaceSessionManager, workspace_id: str, fva
 
 
 def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
+    err = _check_provider_available(manager)
+    if err:
+        return ToolResponse.error_response(workspace_id, 'binary', err, provenance={'tool': 'ai_summarize_binary'}).to_dict()
     workspace = manager.get_workspace(workspace_id)
     result = _analysis_service(manager).analyze_binary(workspace, options=_options_from_kwargs(kwargs))
     summary = result.get('analysis', {}).get('summary', 'binary summary ready')
@@ -518,6 +559,9 @@ def ai_summarize_binary(manager: WorkspaceSessionManager, workspace_id: str, **k
 
 
 def ai_analyze_functions(manager: WorkspaceSessionManager, workspace_id: str, fvas: list[Any], **kwargs) -> Dict[str, Any]:
+    err = _check_provider_available(manager)
+    if err:
+        return ToolResponse.error_response(workspace_id, 'function', err, provenance={'tool': 'ai_analyze_functions'}).to_dict()
     workspace = manager.get_workspace(workspace_id)
     parsed = [parse_va(fva) for fva in fvas]
     options = _options_from_kwargs(kwargs, 'workspace_id', 'fvas')
