@@ -27,6 +27,18 @@ class AiConfig:
     mcp_http_max_request_size: int = 1024 * 1024  # 1MB default
     mcp_http_rate_limit: int = 60  # 60 requests per window
     mcp_http_rate_limit_window: int = 60  # 60 seconds
+    analysis_max_nodes: int = 32
+    analysis_max_edges: int = 64
+    analysis_max_paths: int = 8
+    analysis_max_constraints: int = 8
+    analysis_max_effects: int = 8
+    analysis_max_callers: int = 16
+    analysis_max_callees: int = 16
+    analysis_max_string_refs: int = 16
+    analysis_max_import_refs: int = 16
+    analysis_max_disassembly_items: int = 32
+    analysis_max_functions: int = 64
+    analysis_max_results: int = 32
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
     def validate(self) -> list[Dict[str, str]]:
@@ -170,6 +182,19 @@ class AiConfig:
             mcp_http_max_request_size=int(data.get('mcp_http_max_request_size', 1024 * 1024)),
             mcp_http_rate_limit=int(data.get('mcp_http_rate_limit', 60)),
             mcp_http_rate_limit_window=int(data.get('mcp_http_rate_limit_window', 60)),
+            # Analysis limits — read from config JSON, fall back to dataclass defaults
+            analysis_max_nodes=int(data.get('analysis_max_nodes', 32)),
+            analysis_max_edges=int(data.get('analysis_max_edges', 64)),
+            analysis_max_paths=int(data.get('analysis_max_paths', 8)),
+            analysis_max_constraints=int(data.get('analysis_max_constraints', 8)),
+            analysis_max_effects=int(data.get('analysis_max_effects', 8)),
+            analysis_max_callers=int(data.get('analysis_max_callers', 16)),
+            analysis_max_callees=int(data.get('analysis_max_callees', 16)),
+            analysis_max_string_refs=int(data.get('analysis_max_string_refs', 16)),
+            analysis_max_import_refs=int(data.get('analysis_max_import_refs', 16)),
+            analysis_max_disassembly_items=int(data.get('analysis_max_disassembly_items', 32)),
+            analysis_max_functions=int(data.get('analysis_max_functions', 64)),
+            analysis_max_results=int(data.get('analysis_max_results', 32)),
             providers=providers,
         )
 

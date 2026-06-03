@@ -11,6 +11,7 @@ from .prompts import build_task_prompt_bundle
 from .redaction import redact_value
 from .mcp.security import assert_provider_allowed
 from .symbolik import summarize_symbolik_paths
+from .mcp.formatters import analysis_limits_from_config
 from .providers import create_provider
 
 
@@ -55,11 +56,13 @@ class AnalysisService:
         }
 
     def analyze_binary(self, vw: Any, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload = extract_binary_overview(vw)
+        limits = analysis_limits_from_config(self.config)
+        payload = extract_binary_overview(vw, analysis_limits=limits)
         return self._run_task('binary_summary', payload, options)
 
     def analyze_function(self, vw: Any, fva: int, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload = extract_function_overview(vw, fva)
+        limits = analysis_limits_from_config(self.config)
+        payload = extract_function_overview(vw, fva, analysis_limits=limits)
         return self._run_task('function_summary', payload, options)
 
     def analyze_functions(self, vw: Any, fvas: list[int], options: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:

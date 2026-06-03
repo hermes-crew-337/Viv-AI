@@ -22,6 +22,63 @@ def bounded(items: Iterable[Dict[str, Any]], max_results: int) -> Tuple[List[Dic
     return seq[:limit], len(seq) - limit
 
 
+def paginated(items: Iterable[Dict[str, Any]], offset: int, limit: int) -> Tuple[List[Dict[str, Any]], bool]:
+    """Slice items with offset/limit pagination.
+
+    Args:
+        items: Iterable of items to paginate.
+        offset: Number of items to skip (0-indexed).
+        limit: Maximum number of items to return (clamped to >= 1).
+
+    Returns:
+        Tuple of (page slice, has_more) where has_more is True if more items exist
+        after the current page.
+    """
+    seq = list(items)
+    lo = max(0, int(offset))
+    hi = lo + max(1, int(limit))
+    page = seq[lo:hi]
+    has_more = hi < len(seq)
+    return page, has_more
+
+
+def pagination_meta(total: int, offset: int, limit: int, has_more: bool) -> Dict[str, Any]:
+    """Build a standard pagination metadata dict.
+
+    Includes total count, current offset/limit, whether more results exist,
+    and computed next_offset for convenience.
+    """
+    return {
+        'total': total,
+        'offset': offset,
+        'limit': limit,
+        'has_more': has_more,
+        'next_offset': offset + limit if has_more else None,
+    }
+
+
+def analysis_limits_from_config(config: Any) -> Dict[str, int]:
+    """Extract bounded-output limits from an AiConfig or compatible object.
+
+    Returns a dict with keys for each bounded parameter, defaulting to safe values.
+    If config is None, returns all defaults.
+    """
+    return {
+        'max_nodes': getattr(config, 'analysis_max_nodes', 32) if config else 32,
+        'max_edges': getattr(config, 'analysis_max_edges', 64) if config else 64,
+        'max_paths': getattr(config, 'analysis_max_paths', 8) if config else 8,
+        'max_constraints': getattr(config, 'analysis_max_constraints', 8) if config else 8,
+        'max_effects': getattr(config, 'analysis_max_effects', 8) if config else 8,
+        'max_callers': getattr(config, 'analysis_max_callers', 16) if config else 16,
+        'max_callees': getattr(config, 'analysis_max_callees', 16) if config else 16,
+        'max_string_refs': getattr(config, 'analysis_max_string_refs', 16) if config else 16,
+        'max_import_refs': getattr(config, 'analysis_max_import_refs', 16) if config else 16,
+        'max_disassembly_items': getattr(config, 'analysis_max_disassembly_items', 32) if config else 32,
+        'max_functions': getattr(config, 'analysis_max_functions', 64) if config else 64,
+        'max_results': getattr(config, 'analysis_max_results', 32) if config else 32,
+    }
+
+
 def collect_strings(vw: Any) -> List[Dict[str, Any]]:
     results = []
     for ltype in (LOC_STRING, LOC_UNI):

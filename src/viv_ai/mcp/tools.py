@@ -8,13 +8,64 @@ from ..extractors import extract_binary_overview, extract_function_overview, fin
 from ..report import generate_report as _generate_report
 from ..graphs import summarize_graph
 from ..symbolik import summarize_symbolik_paths
-from .formatters import bounded, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
+from .formatters import analysis_limits_from_config, paginated, pagination_meta, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
 from .security import assert_apply_allowed
 from .session import WorkspaceSessionManager
 
+import threading
+import time
 
 ToolFn = Callable[..., Dict[str, Any]]
+
+
+def _limits_from_manager(manager: WorkspaceSessionManager) -> dict:
+    """Extract analysis limits from the manager's config, or return defaults."""
+    service = getattr(manager, 'analysis_service', None)
+    if service is None:
+        return analysis_limits_from_config(None)
+    config = getattr(service, 'config', None)
+    return analysis_limits_from_config(config)
+
+
+def _ensure_analyzed(workspace: Any, poll_seconds: float = 3.0) -> bool:
+    """Ensure workspace analysis has started and wait briefly for results.
+    
+    If the workspace already has functions (analyzed or loaded with symbols),
+    returns True immediately. Otherwise polls for up to *poll_seconds* for
+    background analysis (started by the workspace_loader) to discover
+    functions.
+    
+    Returns True if at least one function is available.
+    """
+    if workspace.getFunctions():
+        return True
+    deadline = time.monotonic() + poll_seconds
+    while time.monotonic() < deadline:
+        time.sleep(0.3)
+        if workspace.getFunctions():
+            return True
+    return len(workspace.getFunctions()) > 0
+
+
+def _trigger_analyze(workspace: Any, timeout: float = 60.0) -> int:
+    """Run workspace.analyze() in a daemon thread with a timeout.
+    
+    Returns the number of functions discovered after analysis
+    (may be partial if the timeout fires before analysis completes).
+    """
+    done = threading.Event()
+    def _run():
+        try:
+            workspace.analyze()
+        except Exception:
+            pass
+        finally:
+            done.set()
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    done.wait(timeout=timeout)
+    return len(workspace.getFunctions())
 
 
 def _schema(properties: Dict[str, Any], required: list[str] | None = None, additional_properties: bool = False) -> Dict[str, Any]:
@@ -30,6 +81,8 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
     hex_addr = {'type': ['string', 'integer'], 'description': 'Address or function VA as hex string like 0x401000 or integer.'}
     workspace_id = {'type': 'string', 'description': 'Workspace ID returned by workspace_open.'}
     max_results = {'type': 'integer', 'minimum': 1, 'description': 'Maximum number of results to return.'}
+    pagination_offset = {'type': 'integer', 'minimum': 0, 'default': 0, 'description': 'Number of results to skip (for pagination).'}
+    pagination_limit = {'type': 'integer', 'minimum': 1, 'default': 32, 'description': 'Maximum results per page (for pagination).'}
     return {
         'workspace_open': {
             'description': 'Open a binary path in a managed Vivisect workspace.',
@@ -58,32 +111,32 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
         },
         'get_strings': {
             'description': 'Return bounded string locations from the workspace.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'get_imports': {
             'description': 'Return bounded imports from the workspace.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'get_exports': {
             'description': 'Return bounded exports from the workspace.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'get_names': {
             'description': 'Return bounded named locations from the workspace.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results}, ['workspace_id']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'get_xrefs_to': {
             'description': 'Return bounded cross references to an address.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results}, ['workspace_id', 'va']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id', 'va']),
             'annotations': {'readOnlyHint': True},
         },
         'get_xrefs_from': {
             'description': 'Return bounded cross references from an address.',
-            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results}, ['workspace_id', 'va']),
+            'inputSchema': _schema({'workspace_id': workspace_id, 'va': hex_addr, 'max_results': max_results, 'offset': pagination_offset}, ['workspace_id', 'va']),
             'annotations': {'readOnlyHint': True},
         },
         'get_function_summary': {
@@ -102,13 +155,26 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
             'annotations': {'readOnlyHint': True},
         },
         'find_functions': {
-            'description': 'Discover functions matching optional filters (name glob, minimum caller count).',
+            'description': 'Discover functions matching optional filters (name glob, minimum caller count). Auto-triggers analysis if none found.',
             'inputSchema': _schema({
                 'workspace_id': workspace_id,
                 'name_glob': {'type': 'string', 'description': 'Optional fnmatch glob pattern (e.g. "sub_*", "*crypto*", "main").'},
                 'min_callers': {'type': 'integer', 'minimum': 0, 'default': 0, 'description': 'Minimum caller count to include.'},
                 'max_results': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'default': 32, 'description': 'Maximum functions to return.'},
             }, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'analyze_workspace': {
+            'description': 'Manually trigger Vivisect analysis on an open workspace. Useful for stripped binaries or re-analysis.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'timeout': {'type': 'integer', 'minimum': 5, 'default': 60, 'description': 'Max seconds to wait for analysis before returning partial results.'},
+            }, ['workspace_id']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'workspace_analysis_status': {
+            'description': 'Report analysis progress for an open workspace (function count, segments analyzed).',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
             'annotations': {'readOnlyHint': True},
         },
         'export_analysis_report': {
@@ -240,12 +306,16 @@ def _proposal(applied: bool, kind: str, va: int, field_name: str, field_value: s
 
 def workspace_open(manager: WorkspaceSessionManager, path: str, workspace: Any = None, **kwargs) -> Dict[str, Any]:
     session = manager.open_workspace(path, workspace=workspace)
+    func_count = len(session.workspace.getFunctions()) if hasattr(session.workspace, 'getFunctions') else 0
+    extras = {}
+    if func_count > 0:
+        extras['function_count'] = func_count
     return ToolResponse.ok(
         workspace_id=session.workspace_id,
         request_scope='workspace',
-        data={'workspace_id': session.workspace_id, 'path': session.path, 'metadata': session.metadata},
+        data={'workspace_id': session.workspace_id, 'path': session.path, 'metadata': session.metadata, **extras},
         provenance={'tool': 'workspace_open'},
-        summary=f'opened workspace {session.workspace_id}',
+        summary=f'opened workspace {session.workspace_id} ({func_count} functions)',
     ).to_dict()
 
 
@@ -286,7 +356,8 @@ def get_metadata(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) 
 
 def get_binary_summary(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    overview = extract_binary_overview(workspace)
+    limits = _limits_from_manager(manager)
+    overview = extract_binary_overview(workspace, analysis_limits=limits)
     return ToolResponse.ok(
         workspace_id=workspace_id,
         request_scope='binary',
@@ -296,58 +367,81 @@ def get_binary_summary(manager: WorkspaceSessionManager, workspace_id: str, **kw
     ).to_dict()
 
 
-def get_strings(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+def get_strings(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_strings(workspace), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'strings': items, 'truncated': truncated}, provenance={'tool': 'get_strings'}, summary=f'{len(items)} strings returned').to_dict()
+    items = collect_strings(workspace)
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'strings': page, 'pagination': meta}, provenance={'tool': 'get_strings'}, summary=f'{len(page)} strings returned').to_dict()
 
 
-def get_imports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+def get_imports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_imports(workspace), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'imports': items, 'truncated': truncated}, provenance={'tool': 'get_imports'}, summary=f'{len(items)} imports returned').to_dict()
+    items = collect_imports(workspace)
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'imports': page, 'pagination': meta}, provenance={'tool': 'get_imports'}, summary=f'{len(page)} imports returned').to_dict()
 
 
-def get_exports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+def get_exports(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_exports(workspace), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'exports': items, 'truncated': truncated}, provenance={'tool': 'get_exports'}, summary=f'{len(items)} exports returned').to_dict()
+    items = collect_exports(workspace)
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'exports': page, 'pagination': meta}, provenance={'tool': 'get_exports'}, summary=f'{len(page)} exports returned').to_dict()
 
 
-def get_names(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, **kwargs) -> Dict[str, Any]:
+def get_names(manager: WorkspaceSessionManager, workspace_id: str, max_results: int = 64, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_names(workspace), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'names': items, 'truncated': truncated}, provenance={'tool': 'get_names'}, summary=f'{len(items)} names returned').to_dict()
+    items = collect_names(workspace)
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'names': page, 'pagination': meta}, provenance={'tool': 'get_names'}, summary=f'{len(page)} names returned').to_dict()
 
 
-def get_xrefs_to(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+def get_xrefs_to(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_xrefs(workspace, parse_va(va), 'to'), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': items, 'truncated': truncated}, provenance={'tool': 'get_xrefs_to'}, summary=f'{len(items)} xrefs-to returned').to_dict()
+    items = collect_xrefs(workspace, parse_va(va), 'to')
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': page, 'pagination': meta}, provenance={'tool': 'get_xrefs_to'}, summary=f'{len(page)} xrefs-to returned').to_dict()
 
 
-def get_xrefs_from(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, **kwargs) -> Dict[str, Any]:
+def get_xrefs_from(manager: WorkspaceSessionManager, workspace_id: str, va: Any, max_results: int = 32, offset: int = 0, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    items, truncated = bounded(collect_xrefs(workspace, parse_va(va), 'from'), max_results)
-    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': items, 'truncated': truncated}, provenance={'tool': 'get_xrefs_from'}, summary=f'{len(items)} xrefs-from returned').to_dict()
+    items = collect_xrefs(workspace, parse_va(va), 'from')
+    page, has_more = paginated(items, offset, max_results)
+    meta = pagination_meta(len(items), offset, max_results, has_more)
+    return ToolResponse.ok(workspace_id, 'workspace', {'xrefs': page, 'pagination': meta}, provenance={'tool': 'get_xrefs_from'}, summary=f'{len(page)} xrefs-from returned').to_dict()
 
 
 def get_function_summary(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
-    summary = extract_function_overview(workspace, parse_va(fva), **kwargs)
+    limits = _limits_from_manager(manager)
+    limits.update(kwargs)  # explicit per-call params override config defaults
+    summary = extract_function_overview(workspace, parse_va(fva), analysis_limits=limits)
     name = summary.get('function', {}).get('name') or summary.get('function', {}).get('va')
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_function_summary'}, summary=f'function summary ready for {name}').to_dict()
 
 
-def get_function_graph(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, max_nodes: int = 64, max_edges: int = 96, **kwargs) -> Dict[str, Any]:
+def get_function_graph(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
+    limits = _limits_from_manager(manager)
+    limits.update(kwargs)  # all per-call params override config defaults
+    max_nodes = limits.get('max_nodes', 64)
+    max_edges = limits.get('max_edges', 96)
     graph = workspace.getFunctionGraph(parse_va(fva))
     summary = summarize_graph(graph, max_nodes=max_nodes, max_edges=max_edges)
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_function_graph'}, summary='function graph ready').to_dict()
 
 
-def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, max_paths: int = 8, max_constraints: int = 8, max_effects: int = 8, **kwargs) -> Dict[str, Any]:
+def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
+    limits = _limits_from_manager(manager)
+    limits.update(kwargs)  # all per-call params override config defaults
+    max_paths = limits.get('max_paths', 8)
+    max_constraints = limits.get('max_constraints', 8)
+    max_effects = limits.get('max_effects', 8)
     getter = getattr(workspace, 'getSymbolikPaths', None)
     if getter is None:
         raise RuntimeError('symbolik path provider is unavailable')
@@ -358,8 +452,49 @@ def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fv
 
 def find_functions(manager: WorkspaceSessionManager, workspace_id: str, name_glob: str | None = None, min_callers: int = 0, max_results: int = 32, **kwargs) -> Dict[str, Any]:
     workspace = manager.get_workspace(workspace_id)
+    # Auto-ensure analysis for stripped binaries: poll briefly, then
+    # fall through to foreground analysis with a timeout if needed.
+    if not _ensure_analyzed(workspace, poll_seconds=3.0):
+        _trigger_analyze(workspace, timeout=20.0)  # fits in 30s max_tool_seconds
+    limits = _limits_from_manager(manager)
+    max_results = limits.get('max_results', max_results)
     matches = _find_functions(workspace, name_glob=name_glob, min_callers=min_callers, max_results=max_results)
     return ToolResponse.ok(workspace_id, 'workspace', {'functions': matches}, provenance={'tool': 'find_functions'}, summary=f'{len(matches)} functions matched').to_dict()
+
+
+def analyze_workspace(manager: WorkspaceSessionManager, workspace_id: str, timeout: int = 60, **kwargs) -> Dict[str, Any]:
+    """Manually trigger Vivisect analysis on an open workspace.
+    
+    Runs vw.analyze() with a configurable timeout in a worker thread.
+    Useful for stripped binaries where the initial background analysis
+    may not have completed, or when re-analysis is desired after renames.
+    """
+    workspace = manager.get_workspace(workspace_id)
+    func_before = len(workspace.getFunctions())
+    func_after = _trigger_analyze(workspace, timeout=float(timeout))
+    new_funcs = func_after - func_before
+    return ToolResponse.ok(
+        workspace_id, 'workspace',
+        {'functions_before': func_before, 'functions_after': func_after, 'new_functions': max(0, new_funcs)},
+        provenance={'tool': 'analyze_workspace'},
+        summary=f'analysis completed: {func_after} functions (discovered {new_funcs} new)',
+    ).to_dict()
+
+
+def workspace_analysis_status(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
+    """Report analysis status for an open workspace.
+    
+    Returns the number of functions discovered so far (useful for
+    checking background analysis progress on stripped binaries).
+    """
+    workspace = manager.get_workspace(workspace_id)
+    func_count = len(workspace.getFunctions())
+    return ToolResponse.ok(
+        workspace_id, 'workspace',
+        {'function_count': func_count},
+        provenance={'tool': 'workspace_analysis_status'},
+        summary=f'{func_count} functions discovered',
+    ).to_dict()
 
 
 def export_analysis_report(manager: WorkspaceSessionManager, workspace_id: str, results: list | None = None, **kwargs) -> Dict[str, Any]:
@@ -482,6 +617,8 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_function_graph': get_function_graph,
         'get_symbolik_summary': get_symbolik_summary,
         'find_functions': find_functions,
+        'analyze_workspace': analyze_workspace,
+        'workspace_analysis_status': workspace_analysis_status,
         'export_analysis_report': export_analysis_report,
         'ai_explain_function': ai_explain_function,
         'ai_summarize_binary': ai_summarize_binary,

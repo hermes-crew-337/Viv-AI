@@ -163,7 +163,12 @@ class McpInspectionToolTests(unittest.TestCase):
 
         self.assertTrue(result['ok'])
         self.assertEqual(len(result['data']['strings']), 2)
-        self.assertEqual(result['data']['truncated'], 1)
+        self.assertIn('pagination', result['data'])
+        self.assertEqual(result['data']['pagination']['total'], 3)
+        self.assertEqual(result['data']['pagination']['offset'], 0)
+        self.assertEqual(result['data']['pagination']['limit'], 2)
+        self.assertTrue(result['data']['pagination']['has_more'])
+        self.assertEqual(result['data']['pagination']['next_offset'], 2)
         self.assertIn('2 strings', result['summary'])
 
     def test_get_imports_and_exports_return_structured_results(self):
@@ -174,7 +179,8 @@ class McpInspectionToolTests(unittest.TestCase):
         exports_result = server.call_tool('get_exports', workspace_id=workspace_id)
 
         self.assertEqual(imports_result['data']['imports'][0]['symbol'], 'puts')
-        self.assertEqual(imports_result['data']['truncated'], 1)
+        self.assertIn('pagination', imports_result['data'])
+        self.assertTrue(imports_result['data']['pagination']['has_more'])
         self.assertEqual(exports_result['data']['exports'][0]['name'], 'helper')
 
     def test_get_names_and_xrefs_are_bounded_and_hex_normalized(self):
@@ -188,7 +194,8 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertEqual(len(names_result['data']['names']), 2)
         self.assertIn('0x00401000', [item['va'] for item in names_result['data']['names']])
         self.assertEqual(xrefs_to_result['data']['xrefs'][0]['from_va'], '0x00401000')
-        self.assertEqual(xrefs_from_result['data']['truncated'], 1)
+        self.assertIn('pagination', xrefs_from_result['data'])
+        self.assertTrue(xrefs_from_result['data']['pagination']['has_more'])
 
     def test_get_function_summary_reuses_bounded_extractor_payload(self):
         server = self._server()

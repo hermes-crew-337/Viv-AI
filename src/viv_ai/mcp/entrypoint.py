@@ -1,8 +1,12 @@
+"""Entrypoint for the Viv-AI MCP server over stdio (JSON-RPC 2.0)."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Any, Dict, Iterable, Optional, TextIO
 
 from ..config import load_runtime_config
@@ -10,8 +14,22 @@ from ..service import AnalysisService
 from .server import VivAIMcpServer
 from .tools import build_tool_metadata
 
-
 _PROTOCOL_VERSION = '2026-03-26'
+
+_ANALYSIS_TIMEOUT = 60  # seconds for the background initial analysis
+
+
+def _viv_load(path: str) -> Any:
+    """Load a binary into a Vivisect workspace and start background analysis."""
+    import vivisect
+
+    vw = vivisect.VivWorkspace()
+    vw.loadFromFile(path)
+    # Launch analysis in a daemon thread so the server can start serving
+    # immediately while analysis catches up in the background.
+    t = threading.Thread(target=vw.analyze, daemon=True, name=f"analyze-{path}")
+    t.start()
+    return vw
 
 
 def _tool_descriptors(server: VivAIMcpServer) -> list[Dict[str, Any]]:
@@ -124,6 +142,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Viv-AI MCP stdio entrypoint')
     parser.add_argument('--once', action='store_true', help='process a single JSON-RPC request from stdin and exit')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
+    parser.add_argument('--analyze-timeout', type=int, default=60, help='max seconds for background analysis on open (default 60)')
     return parser
 
 
@@ -132,7 +151,12 @@ def main(argv: Optional[Iterable[str]] = None, instream: Optional[TextIO] = None
     args = parser.parse_args(list(argv) if argv is not None else None)
     if server is None:
         config = load_runtime_config(args.config)
-        server = VivAIMcpServer(analysis_service=AnalysisService(config))
+        mcp_timeout = getattr(config, 'mcp_max_tool_seconds', None) if config else None
+        server = VivAIMcpServer(
+            workspace_loader=_viv_load,
+            analysis_service=AnalysisService(config),
+            max_tool_seconds=mcp_timeout or 120.0,  # generous for analysis-heavy tools
+        )
     instream = instream or sys.stdin
     outstream = outstream or sys.stdout
     if args.once:
