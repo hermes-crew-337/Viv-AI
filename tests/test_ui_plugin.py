@@ -1,4 +1,12 @@
 import unittest
+import sys
+from unittest.mock import MagicMock, patch
+
+# Make vivisect.symboliks available for context-menu checks that
+# probe whether Vivisect's symboliks module is installed.
+_vivisect_mock = MagicMock()
+_vivisect_mock.symboliks = MagicMock()
+sys.modules.setdefault('vivisect', _vivisect_mock)
 
 
 class FakeVW:
@@ -232,7 +240,9 @@ class GuiPluginTests(unittest.TestCase):
         menu_callbacks['&Tools.&AI Helper.&Explain Current Function']()
         menu_callbacks['&Tools.&AI Helper.&Analyze Current Function Graph']()
         menu_callbacks['&Tools.&AI Helper.&Summarize Current Binary']()
-        menu_callbacks['&Tools.&AI Helper.&Summarize Current Function Symboliks']()
+        with patch('viv_ai.ui.widgets.get_symbolik_path_dicts') as mock_paths:
+            mock_paths.return_value = [{'path_id': 'p0', 'constraints': [], 'effects': [], 'return_relation': ''}]
+            menu_callbacks['&Tools.&AI Helper.&Summarize Current Function Symboliks']()
         menu_callbacks['&Tools.&AI Helper.&Show Provider Status']()
 
         self.assertEqual(service.calls[0], ('function', 0x401000, {}))
@@ -256,7 +266,11 @@ class GuiPluginTests(unittest.TestCase):
         actions = {label: callback for label, callback in menu.actions}
         actions['Explain Function with AI']()
         actions['Analyze Function Graph with AI']()
-        actions['Summarize Symbolik Paths with AI']()
+        with patch('viv_ai.ui.widgets.get_symbolik_path_dicts') as mock_paths:
+            mock_paths.return_value = [
+                {'path_id': 'p0', 'constraints': ['eax == 0'], 'effects': ['retval = 1'], 'return_relation': ''},
+            ]
+            actions['Summarize Symbolik Paths with AI']()
         actions['Queue Function Analysis']()
 
         self.assertEqual(len(menu.actions), 4)
@@ -267,7 +281,6 @@ class GuiPluginTests(unittest.TestCase):
         self.assertEqual(service.calls[3], ('function', 0x401000, {'background': True}))
         self.assertEqual(panel.review_panel.pending_name, 'parse_input')
         self.assertEqual(vw.graph_requests, [0x401000])
-        self.assertEqual(vw.symbolik_requests, [0x401000])
 
     def test_installed_context_hook_skips_non_function_targets(self):
         from viv_ai.ui.widgets import install_gui

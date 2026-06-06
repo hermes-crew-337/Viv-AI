@@ -7,7 +7,7 @@ from ..campaign import campaign_renames as _campaign_renames, campaign_comments 
 from ..extractors import extract_binary_overview, extract_function_overview, find_functions as _find_functions
 from ..report import generate_report as _generate_report
 from ..graphs import summarize_graph
-from ..symbolik import summarize_symbolik_paths
+from ..symbolik import summarize_symbolik_paths, get_symbolik_path_dicts
 from .formatters import analysis_limits_from_config, paginated, pagination_meta, collect_exports, collect_imports, collect_names, collect_strings, collect_xrefs, parse_va
 from .schemas import ToolResponse
 from .security import assert_apply_allowed
@@ -449,14 +449,23 @@ def get_symbolik_summary(manager: WorkspaceSessionManager, workspace_id: str, fv
     workspace = manager.get_workspace(workspace_id)
     limits = _limits_from_manager(manager)
     limits.update(kwargs)  # all per-call params override config defaults
-    max_paths = limits.get('max_paths', 8)
+    max_paths = limits.get('max_paths', 100)
+    per_path_timeout = limits.get('per_path_timeout', 30.0)
+    total_timeout = limits.get('total_timeout', 120.0)
+    path_dicts = get_symbolik_path_dicts(
+        workspace, parse_va(fva),
+        max_paths=max_paths,
+        per_path_timeout=per_path_timeout,
+        total_timeout=total_timeout,
+    )
     max_constraints = limits.get('max_constraints', 8)
     max_effects = limits.get('max_effects', 8)
-    getter = getattr(workspace, 'getSymbolikPaths', None)
-    if getter is None:
-        raise RuntimeError('symbolik path provider is unavailable')
-    paths = getter(parse_va(fva))
-    summary = summarize_symbolik_paths(paths, max_paths=max_paths, max_constraints=max_constraints, max_effects=max_effects)
+    summary = summarize_symbolik_paths(
+        path_dicts,
+        max_paths=max_paths,
+        max_constraints=max_constraints,
+        max_effects=max_effects,
+    )
     return ToolResponse.ok(workspace_id, 'function', summary, provenance={'tool': 'get_symbolik_summary'}, summary='symbolik summary ready').to_dict()
 
 

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from ..config import AiConfig
 from ..service import AnalysisService
+from ..symbolik import get_symbolik_path_dicts, summarize_symbolik_paths
 from .jobs import BackgroundJobRunner
 from .render import render_analysis_result, render_plain_text_fallback
 from .review import ReviewApplyPanel
@@ -191,13 +192,17 @@ class AIHelperPanel:
             return self._handle_error_result('symbolik_summary', 'no current function available')
         return self.summarize_symboliks_for_function(current, options=options)
 
-    def summarize_symboliks_for_function(self, fva: int, options: Optional[dict] = None):
-        getter = getattr(self.vw, 'getSymbolikPaths', None)
-        if getter is None:
-            return self._handle_error_result('symbolik_summary', 'symbolik path provider is unavailable', va=fva)
+    def summarize_symboliks_for_function(self, fva: int, options: Optional[dict] = None, per_path_timeout: float = 30.0, total_timeout: float = 120.0):
         try:
-            paths = getter(fva)
-            result = self.service.analyze_symbolik(paths, options=options)
+            path_dicts = get_symbolik_path_dicts(
+                self.vw, fva,
+                per_path_timeout=per_path_timeout,
+                total_timeout=total_timeout,
+            )
+            summary = summarize_symbolik_paths(path_dicts)
+            result = self.service.analyze_symbolik(summary, options=options)
+        except RuntimeError as exc:
+            return self._handle_error_result('symbolik_summary', str(exc), va=fva)
         except Exception as exc:
             return self._handle_error_result('symbolik_summary', str(exc), va=fva)
         return self._handle_success_result(result, target_va=fva)
@@ -597,7 +602,14 @@ def _build_context_actions(panel: AIHelperPanel, target_va: Optional[int]):
             'callback': lambda: panel.queue_function_analysis(target_va),
         },
     ]
-    if getattr(panel.vw, 'getSymbolikPaths', None) is not None:
+    # Check whether Vivisect's symboliks module is available
+    _has_symboliks = False
+    try:
+        import vivisect.symboliks  # noqa: F401
+        _has_symboliks = True
+    except ImportError:
+        pass
+    if _has_symboliks:
         actions.append({
             'label': 'Summarize Symbolik Paths with AI',
             'va': target_va,

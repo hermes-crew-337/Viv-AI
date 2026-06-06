@@ -1,4 +1,23 @@
 import unittest
+from unittest.mock import patch
+
+from viv_ai.symbolik import summarize_symbolik_paths
+
+
+SAMPLE_SYMBOLIK_PATHS = [
+    {
+        'path_id': 'p0',
+        'constraints': ['eax == 1', 'ebx != 0'],
+        'effects': ['calls helper', 'writes flag'],
+        'return_relation': 'returns eax',
+    },
+    {
+        'path_id': 'p1',
+        'constraints': ['eax == 2'],
+        'effects': ['returns early'],
+        'return_relation': 'returns 0',
+    },
+]
 
 
 class FakeGraph:
@@ -49,22 +68,7 @@ class FakeVW:
         }
         self.exports = [(0x402000, 'FUNC', 'helper', 'sample.bin')]
         self.imports = [self.locations[0x5000], self.locations[0x5008]]
-        self.symbolik_paths = {
-            0x401000: [
-                {
-                    'path_id': 'p0',
-                    'constraints': ['eax == 1', 'ebx != 0'],
-                    'effects': ['calls helper', 'writes flag'],
-                    'return_relation': 'returns eax',
-                },
-                {
-                    'path_id': 'p1',
-                    'constraints': ['eax == 2'],
-                    'effects': ['returns early'],
-                    'return_relation': 'returns 0',
-                },
-            ]
-        }
+
 
     def getMeta(self, name):
         return self.meta.get(name)
@@ -127,9 +131,6 @@ class FakeVW:
 
     def getFunctionApi(self, fva):
         return None
-
-    def getSymbolikPaths(self, fva):
-        return list(self.symbolik_paths.get(fva, []))
 
 
 class McpInspectionToolTests(unittest.TestCase):
@@ -225,14 +226,16 @@ class McpInspectionToolTests(unittest.TestCase):
         server = self._server()
         workspace_id = self._open(server)
 
-        result = server.call_tool(
-            'get_symbolik_summary',
-            workspace_id=workspace_id,
-            fva='0x401000',
-            max_paths=1,
-            max_constraints=1,
-            max_effects=1,
-        )
+        with patch('viv_ai.mcp.tools.get_symbolik_path_dicts') as mock_fn:
+            mock_fn.return_value = SAMPLE_SYMBOLIK_PATHS
+            result = server.call_tool(
+                'get_symbolik_summary',
+                workspace_id=workspace_id,
+                fva='0x401000',
+                max_paths=1,
+                max_constraints=1,
+                max_effects=1,
+            )
 
         self.assertTrue(result['ok'])
         self.assertEqual(result['data']['path_count'], 2)
