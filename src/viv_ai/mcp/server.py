@@ -59,8 +59,9 @@ class VivAIMcpServer:
             if mutation_policy is not None:
                 self.session_manager.mutation_policy = resolve_mutation_policy(mutation_policy)
         # read_only is a high-level bool that overrides the mutation_policy
-        # derived from config.  When True, the server refuses all mutations.
-        if read_only is not None:
+        # derived from config — IF mutation_policy wasn't explicitly provided.
+        # When mutation_policy is explicitly set, it always takes precedence.
+        if read_only is not None and mutation_policy is None:
             from ..models import MutationPolicy
             if read_only:
                 self.session_manager.mutation_policy = MutationPolicy.CONSERVATIVE_READONLY
