@@ -41,6 +41,11 @@ class AiConfig:
     analysis_max_results: int = 32
     providers: Dict[str, ProviderConfig] = dataclasses.field(default_factory=dict)
 
+    @property
+    def read_only(self) -> bool:
+        """Whether the server is in read-only mode (derived from mutation_policy)."""
+        return self.mutation_policy == MutationPolicy.CONSERVATIVE_READONLY
+
     def validate(self) -> list[Dict[str, str]]:
         issues: list[Dict[str, str]] = []
         if self.default_provider not in self.providers:
@@ -141,6 +146,7 @@ class AiConfig:
             'default_model': self.default_model,
             'local_only': self.local_only,
             'remote_providers_enabled': self.remote_providers_enabled,
+            'read_only': self.read_only,
             'mutation_policy': self.mutation_policy.value,
             'mcp_max_concurrent_tools': self.mcp_max_concurrent_tools,
             'mcp_max_tool_seconds': self.mcp_max_tool_seconds,
@@ -157,11 +163,21 @@ class AiConfig:
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> 'AiConfig':
         data = dict(data or {})
-        raw_policy = data.get('mutation_policy', MutationPolicy.CONSERVATIVE_READONLY.value)
-        try:
-            policy = MutationPolicy(raw_policy)
-        except ValueError as exc:
-            raise ValueError(f'invalid mutation policy: {raw_policy}') from exc
+
+        # Resolve mutation_policy.  If the high-level read_only bool is in the
+        # config, it maps to the corresponding MutationPolicy value.  If both
+        # are provided, mutation_policy takes precedence (read_only is ignored
+        # as a derived convenience readable in server_info).
+        if 'mutation_policy' in data:
+            raw_policy = data['mutation_policy']
+            try:
+                policy = MutationPolicy(raw_policy)
+            except ValueError as exc:
+                raise ValueError(f'invalid mutation policy: {raw_policy}') from exc
+        elif 'read_only' in data:
+            policy = MutationPolicy.CONSERVATIVE_READONLY if bool(data['read_only']) else MutationPolicy.DIRECT_APPLY_ENABLED
+        else:
+            policy = MutationPolicy.CONSERVATIVE_READONLY
 
         providers = {
             name: ProviderConfig.from_dict(cfg)

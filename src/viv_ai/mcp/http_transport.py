@@ -281,6 +281,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--rate-limit', type=int, default=60, help='Maximum requests per rate limit window (default: 60)')
     parser.add_argument('--rate-limit-window', type=int, default=60, help='Rate limit window in seconds (default: 60)')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--read-only', dest='read_only', action='store_true', default=None, help='block mutations (overrides config)')
+    group.add_argument('--read-write', dest='read_only', action='store_false', default=None, help='allow mutations (overrides config)')
     return parser
 
 
@@ -290,7 +293,8 @@ def main(argv: Optional[Iterable[str]] = None, server: Optional[VivAIMcpServer] 
     config = None
     if server is None:
         config = load_runtime_config(args.config)
-        server = VivAIMcpServer(analysis_service=AnalysisService(config))
+        ro = args.read_only if args.read_only is not None else getattr(config, 'read_only', True)
+        server = VivAIMcpServer(analysis_service=AnalysisService(config), read_only=ro)
     server.start()
     httpd = create_http_server(
         server,

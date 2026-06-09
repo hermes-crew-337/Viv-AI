@@ -245,6 +245,30 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertEqual(result['data']['truncated']['paths'], 1)
         self.assertIn('symbolik', result['summary'])
 
+    def test_tool_metadata_matches_registry(self):
+        """Every tool in the registry must have metadata, and vice versa."""
+        from viv_ai.mcp.tools import build_default_registry, build_tool_metadata
+
+        registry = build_default_registry()
+        metadata = build_tool_metadata()
+
+        registry_keys = set(registry.keys())
+        metadata_keys = set(metadata.keys())
+
+        # Tools in registry but missing metadata → they won't get descriptions/schemas
+        missing_meta = registry_keys - metadata_keys
+        self.assertEqual(
+            missing_meta, set(),
+            f'Tools in registry missing from metadata: {missing_meta}',
+        )
+
+        # Tools in metadata but not in registry → dead declarations
+        missing_reg = metadata_keys - registry_keys
+        self.assertEqual(
+            missing_reg, set(),
+            f'Tools declared in metadata but not in registry: {missing_reg}',
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

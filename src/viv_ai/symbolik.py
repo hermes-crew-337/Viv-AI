@@ -55,9 +55,10 @@ def _consume_via_queue(gen, max_count, per_item_timeout, total_deadline):
 
         items.append((idx, payload))
 
-    # Any early exit — tell the thread to stop so it doesn't keep running Z3
-    # on paths nobody will read.  Setting after a normal exhaustion is a
-    # harmless no-op (thread already returned from its ``for`` loop).
+    # Any early exit — tell the thread to stop so it doesn't keep running
+    # symbolic execution on paths nobody will read.  Setting after a normal
+    # exhaustion is a harmless no-op (thread already returned from its ``for``
+    # loop).
     stop_event.set()
     return items
 

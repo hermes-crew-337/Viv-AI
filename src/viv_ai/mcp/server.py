@@ -25,6 +25,16 @@ class _AsyncCallState:
 
 @contextmanager
 def _time_limit(seconds: float):
+    """Enforce a wall-clock timeout via SIGALRM (Unix-only).
+
+    Falls through with no timeout enforcement on non-Unix platforms
+    where signal.SIGALRM is unavailable (e.g. Windows).
+    """
+    if not hasattr(signal, 'SIGALRM'):
+        # No SIGALRM available — timeout is a best-effort hint
+        yield
+        return
+
     def _handle_timeout(signum, frame):
         raise _ToolTimeout(f'timed out after {seconds:g}s')
 
@@ -41,13 +51,22 @@ def _time_limit(seconds: float):
 
 
 class VivAIMcpServer:
-    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None):
+    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None):
         self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy)
         if session_manager is not None:
             if analysis_service is not None:
                 self.session_manager.analysis_service = analysis_service
             if mutation_policy is not None:
                 self.session_manager.mutation_policy = resolve_mutation_policy(mutation_policy)
+        # read_only is a high-level bool that overrides the mutation_policy
+        # derived from config.  When True, the server refuses all mutations.
+        if read_only is not None:
+            from ..models import MutationPolicy
+            if read_only:
+                self.session_manager.mutation_policy = MutationPolicy.CONSERVATIVE_READONLY
+            elif self.session_manager.mutation_policy == MutationPolicy.CONSERVATIVE_READONLY:
+                # No explicit mutation_policy was set, so flip to enabled
+                self.session_manager.mutation_policy = MutationPolicy.DIRECT_APPLY_ENABLED
         config = getattr(getattr(self.session_manager, 'analysis_service', None), 'config', None)
         self.max_concurrent_tools = int(max_concurrent_tools if max_concurrent_tools is not None else getattr(config, 'mcp_max_concurrent_tools', 4))
         self.max_tool_seconds = float(max_tool_seconds if max_tool_seconds is not None else getattr(config, 'mcp_max_tool_seconds', 30))
@@ -71,6 +90,8 @@ class VivAIMcpServer:
                 'max_concurrent_tools': self.max_concurrent_tools,
                 'max_tool_seconds': self.max_tool_seconds,
             },
+            'mutation_policy': self.session_manager.mutation_policy.value,
+            'read_only': self.session_manager.mutation_policy.value == 'conservative_readonly',
         }
 
     def start(self) -> Dict[str, Any]:

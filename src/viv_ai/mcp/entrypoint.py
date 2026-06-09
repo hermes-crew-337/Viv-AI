@@ -143,6 +143,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--once', action='store_true', help='process a single JSON-RPC request from stdin and exit')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     parser.add_argument('--analyze-timeout', type=int, default=60, help='max seconds for background analysis on open (default 60)')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--read-only', dest='read_only', action='store_true', default=None, help='block mutations (overrides config)')
+    group.add_argument('--read-write', dest='read_only', action='store_false', default=None, help='allow mutations (overrides config)')
     return parser
 
 
@@ -152,9 +155,12 @@ def main(argv: Optional[Iterable[str]] = None, instream: Optional[TextIO] = None
     if server is None:
         config = load_runtime_config(args.config)
         mcp_timeout = getattr(config, 'mcp_max_tool_seconds', None) if config else None
+        # CLI --read-only / --read-write overrides config value
+        ro = args.read_only if args.read_only is not None else getattr(config, 'read_only', True)
         server = VivAIMcpServer(
             workspace_loader=_viv_load,
             analysis_service=AnalysisService(config),
+            read_only=ro,
             max_tool_seconds=mcp_timeout or 120.0,  # generous for analysis-heavy tools
         )
     instream = instream or sys.stdin
