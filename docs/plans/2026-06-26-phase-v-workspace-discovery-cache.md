@@ -1,7 +1,7 @@
 # Phase V: Workspace Discovery, Auto-Open, and LRU Cache
 
-> **Status:** Proposed
-> **Branch target:** new feature branch off current Viv-AI MCP line
+> **Status:** Complete (July 28, 2026)
+> **Branch target:** feat/phase-q-http-maturity (merged to PR #3)
 > **Focus:** make file access and workspace selection trivial for LLM/MCP clients
 
 **Goal:** Let the MCP server expose a clear file inventory, auto-open or reuse VivWorkspaces on demand, prefer existing `.viv` files by default, and keep recently used workspaces cached under configurable LRU limits.

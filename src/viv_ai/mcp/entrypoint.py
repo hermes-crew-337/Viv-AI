@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, Optional, TextIO
 
 from ..config import load_runtime_config
 from ..service import AnalysisService
+from .filesystem import FilesystemPolicy
 from .server import VivAIMcpServer, ServerMode
 from .tools import build_tool_metadata
 
@@ -140,6 +141,8 @@ def serve_forever(server: VivAIMcpServer, instream: TextIO, outstream: TextIO) -
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Viv-AI MCP stdio entrypoint')
+
+    # General options
     parser.add_argument('--once', action='store_true', help='process a single JSON-RPC request from stdin and exit')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     parser.add_argument('--analyze-timeout', type=int, default=60, help='max seconds for background analysis on open (default 60)')
@@ -147,6 +150,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--read-only', dest='read_only', action='store_true', default=None, help='block mutations (overrides config)')
     group.add_argument('--read-write', dest='read_only', action='store_false', default=None, help='allow mutations (overrides config)')
+
+    # Phase V: Filesystem access control
+    parser.add_argument('--base-dir', default=None, help='restrict workspace discovery to this directory tree')
+    parser.add_argument('--allow-root', action='store_true', default=False, help='allow root filesystem access (requires --base-dir /)')
+
+    # Phase V: Workspace cache management
+    parser.add_argument('--cache-max', type=int, default=0, help='max cached sessions (0 = unlimited, default)')
+    parser.add_argument('--prefer-viv', dest='prefer_viv', action='store_true', default=True, help='prefer existing .viv over raw binary (default)')
+    parser.add_argument('--force-reanalyze', dest='force_reanalyze', action='store_true', default=False, help='ignore .viv cache; reanalyze from binary')
+
+    # Phase V: Startup workspace selectors
+    parser.add_argument('--workspace-prompt', dest='workspace_prompt', nargs='*', default=[], help='path glob patterns to auto-open at startup')
+
     return parser
 
 
@@ -158,12 +174,21 @@ def main(argv: Optional[Iterable[str]] = None, instream: Optional[TextIO] = None
         mcp_timeout = getattr(config, 'mcp_max_tool_seconds', None) if config else None
         # CLI --read-only / --read-write overrides config value
         ro = args.read_only if args.read_only is not None else getattr(config, 'read_only', True)
+        # Build filesystem policy from CLI flags
+        fs_policy = FilesystemPolicy(
+            base_dir=args.base_dir,
+            allow_root=args.allow_root,
+        )
         server = VivAIMcpServer(
             workspace_loader=_viv_load,
             analysis_service=AnalysisService(config),
             read_only=ro,
             max_tool_seconds=mcp_timeout or 120.0,  # generous for analysis-heavy tools
             mode=ServerMode(args.mode),
+            filesystem_policy=fs_policy,
+            cache_max=args.cache_max,
+            prefer_existing_viv=args.prefer_viv,
+            force_reanalyze=args.force_reanalyze,
         )
     instream = instream or sys.stdin
     outstream = outstream or sys.stdout

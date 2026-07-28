@@ -1387,7 +1387,7 @@ class TestBuildFunctions(unittest.TestCase):
             with self.subTest(tool=name):
                 self.assertTrue(callable(fn), f'{name} is not callable')
         # Count all tools
-        self.assertEqual(len(registry), 48, 'expected 48 tools in default registry')
+        self.assertEqual(len(registry), 50, 'expected 50 tools in default registry')
 
 
 # =========================================================================

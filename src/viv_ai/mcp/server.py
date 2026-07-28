@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .schemas import ToolResponse
 from .security import resolve_mutation_policy
+from .filesystem import FilesystemPolicy
 from .session import WorkspaceSessionError, WorkspaceSessionManager
 from .tools import build_default_registry, build_tool_metadata
 
@@ -86,7 +87,7 @@ ATTACKER_SOURCES = {
 }
 
 class VivAIMcpServer:
-    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None, mode: ServerMode = ServerMode.HYBRID):
+    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None, mode: ServerMode = ServerMode.HYBRID, filesystem_policy: Optional['FilesystemPolicy'] = None, cache_max: int = 0, prefer_existing_viv: bool = True, force_reanalyze: bool = False):
         self.mode = mode
         # Provide a default workspace_loader if none given, so the server works standalone
         if workspace_loader is None:
@@ -98,12 +99,16 @@ class VivAIMcpServer:
                 return vw
             workspace_loader = _default_loader
 
-        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy, mode=mode.value)
-        if session_manager is not None:
-            if analysis_service is not None:
-                self.session_manager.analysis_service = analysis_service
-            if mutation_policy is not None:
-                self.session_manager.mutation_policy = resolve_mutation_policy(mutation_policy)
+        self.session_manager = session_manager or WorkspaceSessionManager(
+            workspace_loader=workspace_loader,
+            analysis_service=analysis_service,
+            mutation_policy=mutation_policy,
+            mode=mode.value,
+            filesystem_policy=filesystem_policy,
+            max_cached=cache_max,
+            prefer_existing_viv=prefer_existing_viv,
+            force_reanalyze=force_reanalyze,
+        )
         # read_only is a high-level bool that overrides the mutation_policy
         # derived from config — IF mutation_policy wasn't explicitly provided.
         # When mutation_policy is explicitly set, it always takes precedence.

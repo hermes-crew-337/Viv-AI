@@ -153,6 +153,16 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
             'inputSchema': _schema({}, []),
             'annotations': {'readOnlyHint': True},
         },
+        'workspace_discover': {
+            'description': 'Discover binary files in the filesystem-policy-allowed tree using glob patterns. Returns paginated results with path, type, size, and .viv status for each file.',
+            'inputSchema': _schema({'pattern': {'type': 'string', 'default': '*', 'description': 'glob pattern to filter files (e.g. *.bin, **/*.exe)'}, 'limit': {'type': 'integer', 'default': 100, 'description': 'max results to return'}, 'offset': {'type': 'integer', 'default': 0, 'description': 'result offset for pagination'}}, []),
+            'annotations': {'readOnlyHint': True},
+        },
+        'workspace_catalog_status': {
+            'description': 'Return cache statistics for the workspace session manager: open sessions, path/alias index sizes, LRU limits, filesystem policy, and mode.',
+            'inputSchema': _schema({}, []),
+            'annotations': {'readOnlyHint': True},
+        },
         'get_metadata': {
             'description': 'Return architecture (e.g. x86-64), platform (e.g. linux), and file format (e.g. ELF64) for an open workspace.',
             'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
@@ -532,6 +542,53 @@ def list_workspaces(manager: WorkspaceSessionManager, **kwargs) -> Dict[str, Any
         data={'workspaces': sessions},
         provenance={'tool': 'list_workspaces'},
         summary=f'{len(sessions)} open workspaces',
+    ).to_dict()
+
+
+def workspace_discover(manager: WorkspaceSessionManager, pattern: str = '*', limit: int = 100, offset: int = 0, **kwargs) -> Dict[str, Any]:
+    """Discover binary files in the filesystem-policy-allowed tree."""
+    from .filesystem import discover_files
+
+    policy = manager.filesystem_policy
+    search_root = policy.effective_base
+    if search_root is None:
+        search_root = '.'
+    try:
+        files = discover_files(search_root, policy, limit=limit, offset=offset, glob_pattern=pattern)
+    except ValueError as exc:
+        return ToolResponse.error(
+            None, 'workspace',
+            f'discovery failed: {exc}',
+            provenance={'tool': 'workspace_discover'},
+        ).to_dict()
+    return ToolResponse.ok(
+        None,
+        request_scope='workspace',
+        data={'files': files, 'count': len(files), 'pattern': pattern, 'limit': limit, 'offset': offset},
+        provenance={'tool': 'workspace_discover'},
+        summary=f'found {len(files)} files matching {pattern!r}',
+    ).to_dict()
+
+
+def workspace_catalog_status(manager: WorkspaceSessionManager, **kwargs) -> Dict[str, Any]:
+    """Return cache statistics: open sessions, LRU limits, index sizes."""
+    return ToolResponse.ok(
+        None,
+        request_scope='workspace',
+        data={
+            'open_sessions': len(manager._sessions),
+            'path_index': len(manager._path_index),
+            'alias_index': len(manager._alias_index),
+            'max_cached': manager.max_cached,
+            'max_cache_bytes': manager.max_cache_bytes,
+            'effective_cache_bytes': 0,
+            'prefer_existing_viv': manager.prefer_existing_viv,
+            'force_reanalyze': manager.force_reanalyze,
+            'filesystem_policy': repr(manager.filesystem_policy),
+            'mode': manager.mode,
+        },
+        provenance={'tool': 'workspace_catalog_status'},
+        summary=f'{len(manager._sessions)} open sessions',
     ).to_dict()
 
 
@@ -1490,4 +1547,7 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'get_dangerous_sinks': get_dangerous_sinks,
         'get_attacker_sources': get_attacker_sources,
         'find_attack_paths': find_attack_paths,
+        # Catalog tools (Phase V)
+        'workspace_discover': workspace_discover,
+        'workspace_catalog_status': workspace_catalog_status,
     }
