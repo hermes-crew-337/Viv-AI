@@ -1204,10 +1204,128 @@ class TestLeaderTools(unittest.TestCase):
         result = leader_get_location(self.mgr, 'ws-test-001')
         self.assertTrue(result['ok'])
         self.assertIsNone(result['data']['current_location'])
-        # getLeaderInfo called via hasattr guard; since the attr is missing,
-        # the result is (None, None) because the if-else returns None directly,
-        # but actually the hasattr check short-circuits to None
         self.assertIsNone(result['data']['user'])
+
+    # ---- leader_annotate ----
+
+    def test_leader_annotate_sets_comment(self):
+        from viv_ai.mcp.tools import leader_annotate
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        result = leader_annotate(self.mgr, 'ws-test-001', va='0x401000', text='Important loop')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['data']['comment_set'])
+        self.vw.setComment.assert_called_once()
+        args, _ = self.vw.setComment.call_args
+        self.assertIn('Important loop', args[1])
+        self.assertIn('[Viv-AI]', args[1])
+
+    def test_leader_annotate_without_leader_returns_error(self):
+        from viv_ai.mcp.tools import leader_annotate
+        self.session.metadata = {}  # no leader
+        result = leader_annotate(self.mgr, 'ws-test-001', va='0x401000', text='test')
+        self.assertFalse(result['ok'])
+        self.assertIn('error', result)
+
+    def test_leader_annotate_no_server(self):
+        from viv_ai.mcp.tools import leader_annotate
+        self.vw.server = None
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        with self.assertRaises(RuntimeError):
+            leader_annotate(self.mgr, 'ws-test-001', va='0x401000', text='test')
+
+    # ---- leader_status ----
+
+    def test_leader_status_returns_session_state(self):
+        from viv_ai.mcp.tools import leader_status
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        result = leader_status(self.mgr, 'ws-test-001')
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertEqual(data['leader_uuid'], 'uuid-123')
+        self.assertEqual(data['current_location'], '0x401000')
+        self.assertEqual(data['user'], 'user')
+        self.assertEqual(data['session_name'], 'session_name')
+        self.assertEqual(len(data['all_sessions']), 2)
+        self.assertIn('chat_count', data)
+
+    def test_leader_status_without_leader_returns_error(self):
+        from viv_ai.mcp.tools import leader_status
+        self.session.metadata = {}
+        result = leader_status(self.mgr, 'ws-test-001')
+        self.assertFalse(result['ok'])
+
+    def test_leader_status_no_server(self):
+        from viv_ai.mcp.tools import leader_status
+        self.vw.server = None
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        with self.assertRaises(RuntimeError):
+            leader_status(self.mgr, 'ws-test-001')
+
+    # ---- leader_explain_binary ----
+
+    def test_leader_explain_binary_fallback_no_ai(self):
+        from viv_ai.mcp.tools import leader_explain_binary
+        self.mgr.analysis_service = None
+        self.vw.getEntryPoints.return_value = [0x401000]
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        result = leader_explain_binary(self.mgr, 'ws-test-001')
+        self.assertTrue(result['ok'])
+        self.assertFalse(result['data']['ai_analysis_completed'])
+        self.assertEqual(result['data']['entry_point'], '0x401000')
+        self.assertTrue(result['data']['navigated'])
+        self.vw.followTheLeader.assert_called_once()
+        self.vw.chat.assert_not_called()
+
+    def test_leader_explain_binary_no_leader(self):
+        from viv_ai.mcp.tools import leader_explain_binary
+        self.session.metadata = {}
+        result = leader_explain_binary(self.mgr, 'ws-test-001')
+        self.assertFalse(result['ok'])
+
+    def test_leader_explain_binary_no_server(self):
+        from viv_ai.mcp.tools import leader_explain_binary
+        self.vw.server = None
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        with self.assertRaises(RuntimeError):
+            leader_explain_binary(self.mgr, 'ws-test-001')
+
+    # ---- leader_explain_graph ----
+
+    def test_leader_explain_graph_fallback_no_ai(self):
+        from viv_ai.mcp.tools import leader_explain_graph
+        self.mgr.analysis_service = None
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        result = leader_explain_graph(self.mgr, 'ws-test-001', fva='0x401000')
+        self.assertTrue(result['ok'])
+        self.assertFalse(result['data']['ai_analysis_completed'])
+        self.vw.followTheLeader.assert_called_once()
+        self.vw.chat.assert_not_called()
+
+    def test_leader_explain_graph_no_leader(self):
+        from viv_ai.mcp.tools import leader_explain_graph
+        self.session.metadata = {}
+        result = leader_explain_graph(self.mgr, 'ws-test-001', fva='0x401000')
+        self.assertFalse(result['ok'])
+
+    def test_leader_explain_graph_no_server(self):
+        from viv_ai.mcp.tools import leader_explain_graph
+        self.vw.server = None
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        with self.assertRaises(RuntimeError):
+            leader_explain_graph(self.mgr, 'ws-test-001', fva='0x401000')
+
+    def test_leader_explain_graph_with_ai_calls_get_function_graph(self):
+        from viv_ai.mcp.tools import leader_explain_graph
+        # Set up analysis service so AI block executes
+        svc = _make_analysis_service()
+        svc.config = MagicMock()
+        svc.config.providers = {'ollama': MagicMock()}
+        svc.config.default_provider = 'ollama'
+        self.mgr.analysis_service = svc
+        self.session.metadata = {'leader_uuid': 'uuid-123'}
+        result = leader_explain_graph(self.mgr, 'ws-test-001', fva='0x401000')
+        self.assertTrue(result['ok'])
+        self.vw.getFunctionGraph.assert_called_once_with(0x401000)
 
 
 # =========================================================================
@@ -1238,6 +1356,8 @@ class TestBuildFunctions(unittest.TestCase):
             'leader_start', 'leader_navigate', 'leader_end',
             'leader_list', 'leader_get_location', 'leader_chat',
             'leader_explain_and_navigate',
+            'leader_annotate', 'leader_status',
+            'leader_explain_binary', 'leader_explain_graph',
         ]
         for tool in required_tools:
             self.assertIn(tool, metadata, f'missing {tool} in tool metadata')
@@ -1267,7 +1387,7 @@ class TestBuildFunctions(unittest.TestCase):
             with self.subTest(tool=name):
                 self.assertTrue(callable(fn), f'{name} is not callable')
         # Count all tools
-        self.assertEqual(len(registry), 41, 'expected 41 tools in default registry')
+        self.assertEqual(len(registry), 45, 'expected 45 tools in default registry')
 
 
 # =========================================================================

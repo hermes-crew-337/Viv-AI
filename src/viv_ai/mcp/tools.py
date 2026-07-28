@@ -79,6 +79,21 @@ def _validate_server_mode(vw) -> None:
         )
 
 
+def _validate_mode(manager: WorkspaceSessionManager, for_local: bool) -> None:
+    """Raise RuntimeError if the server's mode forbids the operation.
+
+    Args:
+        manager: the session manager (carries the ``mode`` attribute).
+        for_local: True when the caller wants to open a local file;
+                   False when it wants a remote server connection.
+    """
+    mode = getattr(manager, 'mode', 'hybrid')
+    if for_local and mode == 'remote':
+        raise RuntimeError(f'cannot open local workspace: server is in {mode!r} mode (use --mode hybrid or --mode local)')
+    if not for_local and mode == 'local':
+        raise RuntimeError(f'cannot connect to remote server: server is in {mode!r} mode (use --mode hybrid or --mode remote)')
+
+
 def _get_or_create_leader_uuid(session) -> str:
     """Return the active leader UUID from session metadata, or create one."""
     uid = session.metadata.get('leader_uuid')
@@ -386,6 +401,37 @@ def build_tool_metadata() -> Dict[str, Dict[str, Any]]:
             }, ['workspace_id', 'fva']),
             'annotations': {'readOnlyHint': False},
         },
+        'leader_annotate': {
+            'description': 'Set a workspace comment at a VA as the AI leader. Followers see annotations directly in their disassembly view.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'va': hex_addr,
+                'text': {'type': 'string', 'description': 'Annotation text to set as a comment on this address.'},
+            }, ['workspace_id', 'va', 'text']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'leader_status': {
+            'description': 'Return aggregate status of the AI leader session: session name, current location, all leader sessions on the workspace, and chat activity.',
+            'inputSchema': _schema({'workspace_id': workspace_id}, ['workspace_id']),
+            'annotations': {'readOnlyHint': True},
+        },
+        'leader_explain_binary': {
+            'description': 'Combined workflow: AI-summarize the binary, navigate followers to the entry point, and deliver the summary via chat.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'kwargs': override_kwargs,
+            }, ['workspace_id']),
+            'annotations': {'readOnlyHint': False},
+        },
+        'leader_explain_graph': {
+            'description': 'Combined workflow: AI-analyze a function\'s control-flow graph, navigate followers to it, and deliver the analysis via chat.',
+            'inputSchema': _schema({
+                'workspace_id': workspace_id,
+                'fva': hex_addr,
+                'kwargs': override_kwargs,
+            }, ['workspace_id', 'fva']),
+            'annotations': {'readOnlyHint': False},
+        },
     }
 
 
@@ -415,6 +461,7 @@ def _proposal(applied: bool, kind: str, va: int, field_name: str, field_value: s
 
 
 def workspace_open(manager: WorkspaceSessionManager, path: str, workspace: Any = None, **kwargs) -> Dict[str, Any]:
+    _validate_mode(manager, for_local=True)
     session = manager.open_workspace(path, workspace=workspace)
     func_count = len(session.workspace.getFunctions()) if hasattr(session.workspace, 'getFunctions') else 0
     extras = {}
@@ -781,6 +828,7 @@ def apply_campaign_comments(manager: WorkspaceSessionManager, workspace_id: str,
 
 def server_connect(manager: WorkspaceSessionManager, host: str, wsname: str, port: int = 0x4074, **kwargs) -> Dict[str, Any]:
     """Connect to a Vivisect Server and open a remote workspace."""
+    _validate_mode(manager, for_local=False)
     session = manager.connect_server(host, port, wsname)
     func_count = len(session.workspace.getFunctions()) if hasattr(session.workspace, 'getFunctions') else 0
     return ToolResponse.ok(
@@ -1048,6 +1096,222 @@ def leader_explain_and_navigate(manager: WorkspaceSessionManager, workspace_id: 
     ).to_dict()
 
 
+# ---------------------------------------------------------------------------
+# New Phase U tools  —  leader_annotate, leader_status, explain variants
+# ---------------------------------------------------------------------------
+
+
+def leader_annotate(manager: WorkspaceSessionManager, workspace_id: str, va: Any, text: str, **kwargs) -> Dict[str, Any]:
+    """Set a workspace comment at *va* tagged as an AI leader annotation.
+
+    Requires an active leader session on a remote workspace.
+    The comment is prefixed with ``[Viv-AI] `` so followers can distinguish
+    AI annotations from manual ones.
+    """
+    session = manager.get_session(workspace_id)
+    vw = session.workspace
+    _validate_server_mode(vw)
+
+    leader_uuid = session.metadata.get('leader_uuid')
+    if not leader_uuid:
+        return ToolResponse.error_response(
+            workspace_id, 'server',
+            'no active leader session — call leader_start first',
+            provenance={'tool': 'leader_annotate'},
+        ).to_dict()
+
+    fva_int = parse_va(va)
+    prefix = 'Viv-AI'
+    full_text = f'[{prefix}] {text}'
+    vw.setComment(fva_int, full_text)
+
+    return ToolResponse.ok(
+        workspace_id=workspace_id,
+        request_scope='function',
+        data={
+            'va': f'0x{fva_int:x}',
+            'comment_set': True,
+            'annotation_length': len(text),
+        },
+        provenance={'tool': 'leader_annotate'},
+        summary=f'annotation set at 0x{fva_int:x}',
+    ).to_dict()
+
+
+def leader_status(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
+    """Return aggregate status of the AI leader session.
+
+    Includes session name, current location, all leader sessions on the
+    workspace, and a count of chat messages.
+    """
+    session = manager.get_session(workspace_id)
+    vw = session.workspace
+    _validate_server_mode(vw)
+
+    leader_uuid = session.metadata.get('leader_uuid')
+    if not leader_uuid:
+        return ToolResponse.error_response(
+            workspace_id, 'server',
+            'no active leader session — call leader_start first',
+            provenance={'tool': 'leader_status'},
+        ).to_dict()
+
+    # Current location
+    current_location = None
+    if hasattr(vw, 'getLeaderLoc'):
+        try:
+            current_location = vw.getLeaderLoc()
+        except Exception:
+            pass
+
+    # Current leader info
+    user = None
+    session_name = None
+    if hasattr(vw, 'getLeaderInfo'):
+        try:
+            info = vw.getLeaderInfo()
+            if info and len(info) >= 2:
+                user, session_name = info[0], info[1]
+        except Exception:
+            pass
+
+    # All leader sessions on the workspace
+    all_sessions = {}
+    if hasattr(vw, 'getLeaderSessions'):
+        try:
+            all_sessions = {
+                uid: {'user': u, 'name': n}
+                for uid, (u, n) in vw.getLeaderSessions().items()
+            }
+        except Exception:
+            pass
+
+    # Chat count
+    chat_count = 0
+    chats_attr = getattr(vw, '_chats', None)
+    if chats_attr is not None:
+        chat_count = len(chats_attr)
+
+    return ToolResponse.ok(
+        workspace_id=workspace_id,
+        request_scope='server',
+        data={
+            'leader_uuid': leader_uuid,
+            'current_location': current_location,
+            'user': user,
+            'session_name': session_name,
+            'all_sessions': all_sessions,
+            'chat_count': chat_count,
+        },
+        provenance={'tool': 'leader_status'},
+        summary=f'leader session {leader_uuid[:8]}... | {len(all_sessions)} session(s) | {chat_count} chat(s)',
+    ).to_dict()
+
+
+def leader_explain_binary(manager: WorkspaceSessionManager, workspace_id: str, **kwargs) -> Dict[str, Any]:
+    """AI-summarise the binary, navigate followers to the entry point,
+    and deliver the summary via chat.
+    """
+    session = manager.get_session(workspace_id)
+    vw = session.workspace
+    _validate_server_mode(vw)
+
+    leader_uuid = session.metadata.get('leader_uuid')
+    if not leader_uuid:
+        return ToolResponse.error_response(
+            workspace_id, 'server',
+            'no active leader session — call leader_start first',
+            provenance={'tool': 'leader_explain_binary'},
+        ).to_dict()
+
+    # Find the first entry point
+    entry_points = vw.getEntryPoints()
+    entry_fva = entry_points[0] if entry_points else None
+
+    # Navigate followers
+    if entry_fva is not None:
+        entry_hex = f'0x{entry_fva:x}'
+        vw.followTheLeader(leader_uuid, entry_hex)
+
+    # Run AI binary analysis if available
+    ai_result = None
+    err = _check_provider_available(manager)
+    if not err:
+        try:
+            ai_result = _analysis_service(manager).analyze_binary(vw, options=_options_from_kwargs(kwargs))
+        except Exception:
+            pass
+
+    # Deliver via chat
+    if ai_result:
+        summary_text = ai_result.get('analysis', {}).get('summary', '')
+        if summary_text:
+            vw.chat(f'[AI] Binary summary: {summary_text}')
+
+    provenance_info = {'tool': 'leader_explain_binary', 'ai_analysis': ai_result is not None}
+    return ToolResponse.ok(
+        workspace_id=workspace_id,
+        request_scope='workspace',
+        data={
+            'entry_point': f'0x{entry_fva:x}' if entry_fva else None,
+            'navigated': entry_fva is not None,
+            'ai_analysis_completed': ai_result is not None,
+            'analysis': ai_result.get('analysis') if ai_result else None,
+        },
+        provenance=provenance_info,
+        summary=f'binary analysis' + (', AI summary delivered' if ai_result else ' (no AI provider)'),
+    ).to_dict()
+
+
+def leader_explain_graph(manager: WorkspaceSessionManager, workspace_id: str, fva: Any, **kwargs) -> Dict[str, Any]:
+    """AI-analyse a function's control-flow graph, navigate followers to it,
+    and deliver the analysis via chat.
+    """
+    session = manager.get_session(workspace_id)
+    vw = session.workspace
+    _validate_server_mode(vw)
+
+    leader_uuid = session.metadata.get('leader_uuid')
+    if not leader_uuid:
+        return ToolResponse.error_response(
+            workspace_id, 'server',
+            'no active leader session — call leader_start first',
+            provenance={'tool': 'leader_explain_graph'},
+        ).to_dict()
+
+    fva_hex = f'0x{parse_va(fva):x}' if not isinstance(fva, str) or not fva.startswith('0x') else fva
+    fva_int = parse_va(fva)
+    vw.followTheLeader(leader_uuid, fva_hex)
+
+    # Run AI graph analysis if available
+    ai_result = None
+    err = _check_provider_available(manager)
+    if not err:
+        try:
+            graph = vw.getFunctionGraph(fva_int)
+            ai_result = _analysis_service(manager).analyze_graph(graph, options=_options_from_kwargs(kwargs))
+        except Exception:
+            pass
+
+    if ai_result:
+        summary_text = ai_result.get('analysis', {}).get('summary', '')
+        if summary_text:
+            vw.chat(f'[AI] Graph analysis: {summary_text}')
+
+    provenance_info = {'tool': 'leader_explain_graph', 'ai_analysis': ai_result is not None}
+    return ToolResponse.ok(
+        workspace_id=workspace_id,
+        request_scope='function',
+        data={
+            'navigated_to': fva_hex,
+            'ai_analysis_completed': ai_result is not None,
+            'analysis': ai_result.get('analysis') if ai_result else None,
+        },
+        provenance=provenance_info,
+        summary=f'graph analysed at {fva_hex}' + (', AI summary delivered' if ai_result else ' (no AI provider)'),
+    ).to_dict()
+
+
 def build_default_registry() -> Dict[str, ToolFn]:
     return {
         'workspace_open': workspace_open,
@@ -1093,4 +1357,8 @@ def build_default_registry() -> Dict[str, ToolFn]:
         'leader_get_location': leader_get_location,
         'leader_chat': leader_chat,
         'leader_explain_and_navigate': leader_explain_and_navigate,
+        'leader_annotate': leader_annotate,
+        'leader_status': leader_status,
+        'leader_explain_binary': leader_explain_binary,
+        'leader_explain_graph': leader_explain_graph,
     }

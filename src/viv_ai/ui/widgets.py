@@ -280,6 +280,67 @@ class AIHelperPanel:
                 )
         return snapshots
 
+    # ---- Leader session helpers ----
+
+    def _has_server(self) -> bool:
+        """Return True if the workspace is connected to a Vivisect Server."""
+        return bool(getattr(getattr(self.vw, 'server', None), 'transport', None))
+
+    def start_leader_session(self) -> Dict[str, Any]:
+        """Start an AI leader session on the current server workspace."""
+        if not self._has_server():
+            return {'error': 'workspace is not connected to a Vivisect Server'}
+        leader_uuid = self._get_or_create_leader_uuid()
+        location = getattr(self.vw, 'current_function', None)
+        loc_str = f'0x{location:08x}' if location is not None else None
+        try:
+            self.vw.iAmLeader(leader_uuid, 'Viv-AI', initial_location=loc_str)
+            self.vw.vprint(f'[Viv-AI] Leader session started (uuid={leader_uuid}, location={loc_str})')
+            return {'status': 'started', 'leader_uuid': leader_uuid}
+        except Exception as exc:
+            return {'error': f'failed to start leader session: {exc}'}
+
+    def stop_leader_session(self) -> Dict[str, Any]:
+        """Stop the current AI leader session."""
+        if not self._has_server():
+            return {'error': 'workspace is not connected to a Vivisect Server'}
+        leader_uuid = self._get_or_create_leader_uuid()
+        try:
+            self.vw.killLeaderSession(leader_uuid)
+            self.vw.vprint(f'[Viv-AI] Leader session stopped (uuid={leader_uuid})')
+            return {'status': 'stopped', 'leader_uuid': leader_uuid}
+        except Exception as exc:
+            return {'error': f'failed to stop leader session: {exc}'}
+
+    def leader_session_status(self) -> Dict[str, Any]:
+        """Return info about the current leader session."""
+        if not self._has_server():
+            return {'status': 'disconnected'}
+        leader_uuid = self._get_or_create_leader_uuid()
+        try:
+            info = self.vw.getLeaderInfo(leader_uuid)
+            sessions = self.vw.getLeaderSessions()
+            return {
+                'status': 'connected',
+                'leader_uuid': leader_uuid,
+                'user': info[0] if info else None,
+                'session_name': info[1] if info and len(info) > 1 else None,
+                'active_sessions': len(sessions) if sessions else 0,
+            }
+        except Exception as exc:
+            return {'status': 'error', 'error': str(exc)}
+
+    def _get_or_create_leader_uuid(self) -> str:
+        """Return a stable leader UUID for this AI session.
+
+        Reuses the session_uuid if available (set at panel init), otherwise
+        generates one and caches it as an attribute.
+        """
+        if not hasattr(self, '_leader_uuid') or not self._leader_uuid:
+            import uuid as _uuid
+            self._leader_uuid = str(_uuid.uuid4())
+        return self._leader_uuid
+
 
 # ---- Qt dock widget ----
 
@@ -656,6 +717,9 @@ def install_gui(vw: Any, vwgui: Any, service: Optional[Any] = None, config: Opti
         vwgui.vqAddMenuField('&Tools.&AI Helper.&Summarize Current Function Symboliks', panel.summarize_current_symboliks, ())
         vwgui.vqAddMenuField('&Tools.&AI Helper.&Queue Current Function Analysis', lambda: panel.queue_function_analysis(getattr(vw, 'current_function', None)), ())
         vwgui.vqAddMenuField('&Tools.&AI Helper.&Show Provider Status', panel.show_provider_status, ())
+        vwgui.vqAddMenuField('&Tools.&AI Helper.&Start Leader Session', panel.start_leader_session, ())
+        vwgui.vqAddMenuField('&Tools.&AI Helper.&Stop Leader Session', panel.stop_leader_session, ())
+        vwgui.vqAddMenuField('&Tools.&AI Helper.&Leader Session Status', panel.leader_session_status, ())
     if hasattr(vw, 'addCtxMenuHook'):
         vw.addCtxMenuHook('viv_ai', lambda *args, **kwargs: _ctx_menu_hook(*args, **kwargs, panel=panel))
     if hasattr(vwgui, 'addHotKey'):

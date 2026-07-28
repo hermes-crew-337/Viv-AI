@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, Optional, TextIO
 
 from ..config import load_runtime_config
 from ..service import AnalysisService
-from .server import VivAIMcpServer
+from .server import VivAIMcpServer, ServerMode
 from .tools import build_tool_metadata
 
 _PROTOCOL_VERSION = '2026-03-26'
@@ -143,6 +143,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--once', action='store_true', help='process a single JSON-RPC request from stdin and exit')
     parser.add_argument('--config', default=None, help='path to a Viv-AI JSON config file; defaults to $VIV_AI_CONFIG or ~/.config/viv-ai/config.json')
     parser.add_argument('--analyze-timeout', type=int, default=60, help='max seconds for background analysis on open (default 60)')
+    parser.add_argument('--mode', choices=['local', 'remote', 'hybrid'], default='hybrid', help='workspace access mode: local (files only), remote (server only), hybrid (both, default)')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--read-only', dest='read_only', action='store_true', default=None, help='block mutations (overrides config)')
     group.add_argument('--read-write', dest='read_only', action='store_false', default=None, help='allow mutations (overrides config)')
@@ -162,6 +163,7 @@ def main(argv: Optional[Iterable[str]] = None, instream: Optional[TextIO] = None
             analysis_service=AnalysisService(config),
             read_only=ro,
             max_tool_seconds=mcp_timeout or 120.0,  # generous for analysis-heavy tools
+            mode=ServerMode(args.mode),
         )
     instream = instream or sys.stdin
     outstream = outstream or sys.stdout

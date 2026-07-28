@@ -40,12 +40,13 @@ class WorkspaceSession:
 
 
 class WorkspaceSessionManager:
-    def __init__(self, workspace_loader=None, analysis_service=None, mutation_policy=None):
+    def __init__(self, workspace_loader=None, analysis_service=None, mutation_policy=None, mode: str = 'hybrid'):
         self._sessions: Dict[str, WorkspaceSession] = {}
         self._path_index: Dict[str, str] = {}
         self.workspace_loader = workspace_loader
         self.analysis_service = analysis_service
         self.mutation_policy = resolve_mutation_policy(mutation_policy)
+        self.mode = mode
 
     def _make_workspace_id(self, path: str) -> str:
         return sha256(path.encode('utf-8')).hexdigest()[:12]

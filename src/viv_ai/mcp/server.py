@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import signal
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -10,6 +11,13 @@ from .schemas import ToolResponse
 from .security import resolve_mutation_policy
 from .session import WorkspaceSessionError, WorkspaceSessionManager
 from .tools import build_default_registry, build_tool_metadata
+
+
+class ServerMode(enum.Enum):
+    """Workspace access mode for the MCP server."""
+    LOCAL = 'local'
+    REMOTE = 'remote'
+    HYBRID = 'hybrid'
 
 
 class _ToolTimeout(RuntimeError):
@@ -51,8 +59,9 @@ def _time_limit(seconds: float):
 
 
 class VivAIMcpServer:
-    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None):
-        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy)
+    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None, mode: ServerMode = ServerMode.HYBRID):
+        self.mode = mode
+        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy, mode=mode.value)
         if session_manager is not None:
             if analysis_service is not None:
                 self.session_manager.analysis_service = analysis_service
@@ -93,6 +102,7 @@ class VivAIMcpServer:
             },
             'mutation_policy': self.session_manager.mutation_policy.value,
             'read_only': self.session_manager.mutation_policy.value == 'conservative_readonly',
+            'mode': self.mode.value,
         }
 
     def start(self) -> Dict[str, Any]:

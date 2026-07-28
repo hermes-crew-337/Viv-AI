@@ -197,6 +197,34 @@ Apply a rename when direct apply is enabled server-side:
 {"tool":"apply_function_rename","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000","new_name":"decrypt_payload"}}
 ```
 
+### Leader session tools (Vivisect Server required)
+
+First connect to a remote workspace:
+
+```json
+{"tool":"server_connect","arguments":{"host":"10.0.0.5","port":16520,"wsname":"my_binary.viv"}}
+```
+
+Then coordinate AI-driven navigation with leader sessions:
+
+```json
+{"tool":"leader_start_session","arguments":{"workspace_id":"<workspace-id>"}}
+{"tool":"leader_annotate","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000","comment":"exploit-hook"}}
+{"tool":"leader_explain_binary","arguments":{"workspace_id":"<workspace-id>"}}
+{"tool":"leader_explain_graph","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000"}}
+{"tool":"leader_status","arguments":{"workspace_id":"<workspace-id>"}}
+```
+
+The `--mode` CLI flag scopes workspace access:
+
+| Flag | Behavior |
+|------|----------|
+| `--mode local` | local file opens only; remote `server_connect` blocked |
+| `--mode remote` | server connections only; local `workspace_open` blocked |
+| `--mode hybrid` | both allowed (default) |
+
+Check mode at runtime via `server/info`:
+
 ## Notes
 
 - Tool outputs are intentionally bounded for LLM-friendly MCP use.

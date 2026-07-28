@@ -23,6 +23,8 @@ Implemented today:
 - review queue support for staged rename/comment suggestions
 - packaged stdio MCP entrypoint and optional HTTP MCP transport
 - provider/model discovery support including live Ollama model enumeration and actionable config validation hints
+- leader coordination tools (leader session lifecycle, annotation, status) for collaborative server workflows
+- `--mode` CLI flag (`local` / `remote` / `hybrid`) for workspace access scoping
 
 Still intentionally incomplete:
 - richer HTTP auth schemes beyond the current bearer-token env-var gate
@@ -128,6 +130,9 @@ When the plugin loads with GUI support, Viv-AI currently registers:
 - `Tools -> AI Helper -> Summarize Current Function Symboliks`
 - `Tools -> AI Helper -> Queue Current Function Analysis`
 - `Tools -> AI Helper -> Show Provider Status`
+- `Tools -> AI Helper -> Start Leader Session`
+- `Tools -> AI Helper -> Stop Leader Session`
+- `Tools -> AI Helper -> Leader Session Status`
 
 ### Context-menu entries on functions
 
@@ -159,6 +164,14 @@ Explicit config path:
 
 ```bash
 viv-ai-mcp --config /path/to/config.json
+```
+
+Access mode flag:
+
+```bash
+viv-ai-mcp --config /path/to/config.json --mode local    # files only
+viv-ai-mcp --config /path/to/config.json --mode remote   # server only
+viv-ai-mcp --config /path/to/config.json --mode hybrid   # both (default)
 ```
 
 Module form:
@@ -260,6 +273,9 @@ Current workflows exposed through the GUI and/or MCP surface include:
 - comment proposal generation
 - review-before-apply mutation flow
 - provider/model readiness inspection
+- leader session lifecycle (start, stop, status)
+- leader annotation and status queries
+- leader explain-and-navigate coordination
 
 Planned next-step workflow areas:
 - richer batch analysis across selected function sets
