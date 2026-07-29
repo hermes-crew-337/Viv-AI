@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Tuple
+import os
+
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 from ..extractors import LOC_STRING, LOC_UNI
 
@@ -68,21 +70,94 @@ def analysis_limits_from_config(config: Any) -> Dict[str, int]:
 
     Returns a dict with keys for each bounded parameter, defaulting to safe values.
     If config is None, returns all defaults.
+    
+    This function reads the following configuration sources in order of precedence:
+    1. Object attributes (analysis_max_* if config is not None)
+    2. Default hard-coded fallbacks
+    
+    For Phase T validation: see validate_analysis_limits() for schema checking.
     """
-    return {
-        'max_nodes': getattr(config, 'analysis_max_nodes', 32) if config else 32,
-        'max_edges': getattr(config, 'analysis_max_edges', 64) if config else 64,
-        'max_paths': getattr(config, 'analysis_max_paths', 8) if config else 8,
-        'max_constraints': getattr(config, 'analysis_max_constraints', 8) if config else 8,
-        'max_effects': getattr(config, 'analysis_max_effects', 8) if config else 8,
-        'max_callers': getattr(config, 'analysis_max_callers', 16) if config else 16,
-        'max_callees': getattr(config, 'analysis_max_callees', 16) if config else 16,
-        'max_string_refs': getattr(config, 'analysis_max_string_refs', 16) if config else 16,
-        'max_import_refs': getattr(config, 'analysis_max_import_refs', 16) if config else 16,
-        'max_disassembly_items': getattr(config, 'analysis_max_disassembly_items', 32) if config else 32,
-        'max_functions': getattr(config, 'analysis_max_functions', 64) if config else 64,
-        'max_results': getattr(config, 'analysis_max_results', 32) if config else 32,
+    DEFAULTS = {
+        'max_nodes': 32,
+        'max_edges': 64,
+        'max_paths': 8,
+        'max_constraints': 8,
+        'max_effects': 8,
+        'max_callers': 16,
+        'max_callees': 16,
+        'max_string_refs': 16,
+        'max_import_refs': 16,
+        'max_disassembly_items': 32,
+        'max_functions': 64,
+        'max_results': 32,
     }
+    
+    if config is None:
+        return dict(DEFAULTS)
+    
+    result = {}
+    for key, def_val in DEFAULTS.items():
+        attr_name = key.replace('max_', 'analysis_max_')
+        val = getattr(config, attr_name, def_val)
+        # Clamp to int >= 0
+        try:
+            val = max(0, int(val)) if val is not None else def_val
+        except (TypeError, ValueError):
+            val = def_val
+        result[key] = val
+    
+    return result
+
+
+def validate_analysis_limits(config: Optional[Any] = None) -> Dict[str, Any]:
+    """Validate analysis limits configuration and return normalized dict.
+    
+    Raises ValueError if any limit is invalid (non-integer or negative).
+    Returns a normalized dict of all limits with values clamped to int >= 0.
+    
+    For Phase T: This function validates schema before limits are used anywhere,
+    ensuring early failure with clear error messages.
+    """
+    ERROR_SUFFIX = " — use analysis_max_<key>=<int>= 0 in config"
+    errors = []
+    
+    DEFAULTS = {
+        'max_nodes': ('analysis_max_nodes', 32),
+        'max_edges': ('analysis_max_edges', 64),
+        'max_paths': ('analysis_max_paths', 8),
+        'max_constraints': ('analysis_max_constraints', 8),
+        'max_effects': ('analysis_max_effects', 8),
+        'max_callers': ('analysis_max_callers', 16),
+        'max_callees': ('analysis_max_callees', 16),
+        'max_string_refs': ('analysis_max_string_refs', 16),
+        'max_import_refs': ('analysis_max_import_refs', 16),
+        'max_disassembly_items': ('analysis_max_disassembly_items', 32),
+        'max_functions': ('analysis_max_functions', 64),
+        'max_results': ('analysis_max_results', 32),
+    }
+    
+    result = {}
+    for key, (attr_name, def_val) in DEFAULTS.items():
+        if config is not None:
+            val = getattr(config, attr_name, def_val)
+            if val is not None:
+                try:
+                    int_val = int(val)
+                    if int_val < 0:
+                        errors.append(f"{key}: {int_val} (negative value{ERROR_SUFFIX})")
+                        continue
+                    result[key] = int_val
+                except (TypeError, ValueError):
+                    errors.append(f"{key}: '{val}' (not an integer{ERROR_SUFFIX})")
+                    continue
+        
+        if key not in result:
+            result[key] = def_val
+    
+    if errors:
+        raise ValueError("Invalid analysis limits:\n  - " + "\n  - ".join(errors))
+    
+    return result
 
 
 def collect_strings(vw: Any) -> List[Dict[str, Any]]:
