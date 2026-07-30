@@ -5,19 +5,28 @@ loaded through VIV_EXT_PATH. The public boundaries are kept narrow so the code
 can migrate in-tree later if that becomes desirable.
 """
 
+from .config import load_runtime_config, resolve_config_path
 from .ui.widgets import install_gui
 
 
 def vivExtension(vw, vwgui):
-    result = {'name': 'viv_ai', 'vwgui_present': vwgui is not None}
+    from .vulntriage import install_vuln_gui
+    config_path = resolve_config_path()
+    config = load_runtime_config(config_path)
+    result = {'name': 'viv_ai', 'vwgui_present': vwgui is not None, 'config_path': str(config_path) if config_path else None}
     if vwgui is None:
-        vw.vprint('viv_ai Phase D core loaded without GUI')
+        detail = f' using config {config_path}' if config_path else ' with default in-memory config'
+        vw.vprint(f'viv_ai Phase P core loaded without GUI{detail}')
         return result
 
-    panel, dock = install_gui(vw, vwgui)
+    panel, dock = install_gui(vw, vwgui, config=config)
+    vuln_panel, vuln_dock = install_vuln_gui(vw, vwgui, config=config)
     result['panel'] = panel
     result['dock'] = dock
-    vw.vprint('viv_ai Phase D GUI loaded (panel, menu, context hook)')
+    result['vuln_panel'] = vuln_panel
+    result['vuln_dock'] = vuln_dock
+    detail = f' using config {config_path}' if config_path else ' with default in-memory config'
+    vw.vprint(f'viv_ai Phase P GUI loaded (panel, menu, context hook, vuln triage){detail}')
     return result
 
 

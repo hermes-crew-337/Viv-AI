@@ -1,4 +1,23 @@
 import unittest
+from unittest.mock import patch
+
+from viv_ai.symbolik import summarize_symbolik_paths
+
+
+SAMPLE_SYMBOLIK_PATHS = [
+    {
+        'path_id': 'p0',
+        'constraints': ['eax == 1', 'ebx != 0'],
+        'effects': ['calls helper', 'writes flag'],
+        'return_relation': 'returns eax',
+    },
+    {
+        'path_id': 'p1',
+        'constraints': ['eax == 2'],
+        'effects': ['returns early'],
+        'return_relation': 'returns 0',
+    },
+]
 
 
 class FakeGraph:
@@ -49,22 +68,7 @@ class FakeVW:
         }
         self.exports = [(0x402000, 'FUNC', 'helper', 'sample.bin')]
         self.imports = [self.locations[0x5000], self.locations[0x5008]]
-        self.symbolik_paths = {
-            0x401000: [
-                {
-                    'path_id': 'p0',
-                    'constraints': ['eax == 1', 'ebx != 0'],
-                    'effects': ['calls helper', 'writes flag'],
-                    'return_relation': 'returns eax',
-                },
-                {
-                    'path_id': 'p1',
-                    'constraints': ['eax == 2'],
-                    'effects': ['returns early'],
-                    'return_relation': 'returns 0',
-                },
-            ]
-        }
+
 
     def getMeta(self, name):
         return self.meta.get(name)
@@ -128,9 +132,6 @@ class FakeVW:
     def getFunctionApi(self, fva):
         return None
 
-    def getSymbolikPaths(self, fva):
-        return list(self.symbolik_paths.get(fva, []))
-
 
 class McpInspectionToolTests(unittest.TestCase):
     def _server(self):
@@ -163,7 +164,12 @@ class McpInspectionToolTests(unittest.TestCase):
 
         self.assertTrue(result['ok'])
         self.assertEqual(len(result['data']['strings']), 2)
-        self.assertEqual(result['data']['truncated'], 1)
+        self.assertIn('pagination', result['data'])
+        self.assertEqual(result['data']['pagination']['total'], 3)
+        self.assertEqual(result['data']['pagination']['offset'], 0)
+        self.assertEqual(result['data']['pagination']['limit'], 2)
+        self.assertTrue(result['data']['pagination']['has_more'])
+        self.assertEqual(result['data']['pagination']['next_offset'], 2)
         self.assertIn('2 strings', result['summary'])
 
     def test_get_imports_and_exports_return_structured_results(self):
@@ -174,7 +180,8 @@ class McpInspectionToolTests(unittest.TestCase):
         exports_result = server.call_tool('get_exports', workspace_id=workspace_id)
 
         self.assertEqual(imports_result['data']['imports'][0]['symbol'], 'puts')
-        self.assertEqual(imports_result['data']['truncated'], 1)
+        self.assertIn('pagination', imports_result['data'])
+        self.assertTrue(imports_result['data']['pagination']['has_more'])
         self.assertEqual(exports_result['data']['exports'][0]['name'], 'helper')
 
     def test_get_names_and_xrefs_are_bounded_and_hex_normalized(self):
@@ -188,7 +195,8 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertEqual(len(names_result['data']['names']), 2)
         self.assertIn('0x00401000', [item['va'] for item in names_result['data']['names']])
         self.assertEqual(xrefs_to_result['data']['xrefs'][0]['from_va'], '0x00401000')
-        self.assertEqual(xrefs_from_result['data']['truncated'], 1)
+        self.assertIn('pagination', xrefs_from_result['data'])
+        self.assertTrue(xrefs_from_result['data']['pagination']['has_more'])
 
     def test_get_function_summary_reuses_bounded_extractor_payload(self):
         server = self._server()
@@ -218,14 +226,16 @@ class McpInspectionToolTests(unittest.TestCase):
         server = self._server()
         workspace_id = self._open(server)
 
-        result = server.call_tool(
-            'get_symbolik_summary',
-            workspace_id=workspace_id,
-            fva='0x401000',
-            max_paths=1,
-            max_constraints=1,
-            max_effects=1,
-        )
+        with patch('viv_ai.mcp.tools.get_symbolik_path_dicts') as mock_fn:
+            mock_fn.return_value = SAMPLE_SYMBOLIK_PATHS
+            result = server.call_tool(
+                'get_symbolik_summary',
+                workspace_id=workspace_id,
+                fva='0x401000',
+                max_paths=1,
+                max_constraints=1,
+                max_effects=1,
+            )
 
         self.assertTrue(result['ok'])
         self.assertEqual(result['data']['path_count'], 2)
@@ -234,6 +244,30 @@ class McpInspectionToolTests(unittest.TestCase):
         self.assertEqual(result['data']['paths'][0]['truncated']['effects'], 1)
         self.assertEqual(result['data']['truncated']['paths'], 1)
         self.assertIn('symbolik', result['summary'])
+
+    def test_tool_metadata_matches_registry(self):
+        """Every tool in the registry must have metadata, and vice versa."""
+        from viv_ai.mcp.tools import build_default_registry, build_tool_metadata
+
+        registry = build_default_registry()
+        metadata = build_tool_metadata()
+
+        registry_keys = set(registry.keys())
+        metadata_keys = set(metadata.keys())
+
+        # Tools in registry but missing metadata → they won't get descriptions/schemas
+        missing_meta = registry_keys - metadata_keys
+        self.assertEqual(
+            missing_meta, set(),
+            f'Tools in registry missing from metadata: {missing_meta}',
+        )
+
+        # Tools in metadata but not in registry → dead declarations
+        missing_reg = metadata_keys - registry_keys
+        self.assertEqual(
+            missing_reg, set(),
+            f'Tools declared in metadata but not in registry: {missing_reg}',
+        )
 
 
 if __name__ == '__main__':

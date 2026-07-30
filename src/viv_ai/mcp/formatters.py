@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Tuple
+import os
+
+from typing import Any, Dict, Iterable, List, Tuple, Optional
 
 from ..extractors import LOC_STRING, LOC_UNI
 
@@ -20,6 +22,142 @@ def bounded(items: Iterable[Dict[str, Any]], max_results: int) -> Tuple[List[Dic
     if len(seq) <= limit:
         return seq, 0
     return seq[:limit], len(seq) - limit
+
+
+def paginated(items: Iterable[Dict[str, Any]], offset: int, limit: int) -> Tuple[List[Dict[str, Any]], bool]:
+    """Slice items with offset/limit pagination.
+
+    Args:
+        items: Iterable of items to paginate.
+        offset: Number of items to skip (0-indexed).
+        limit: Maximum number of items to return (clamped to >= 1).
+
+    Returns:
+        Tuple of (page slice, has_more) where has_more is True if more items exist
+        after the current page.
+    """
+    seq = list(items)
+    lo = max(0, int(offset))
+    hi = lo + max(1, int(limit))
+    page = seq[lo:hi]
+    has_more = hi < len(seq)
+    return page, has_more
+
+
+def pagination_meta(total: int, offset: int, limit: int, has_more: bool) -> Dict[str, Any]:
+    """Build a standard pagination metadata dict.
+
+    Always reports the *effective* offset and limit — negative offsets are
+    clamped to zero, zero/negative limits are clamped to one — so clients
+    never see misleading raw-input values.
+
+    Includes total count, current offset/limit, whether more results exist,
+    and computed next_offset for convenience.
+    """
+    clamped_offset = max(0, int(offset))
+    clamped_limit = max(1, int(limit))
+    return {
+        'total': total,
+        'offset': clamped_offset,
+        'limit': clamped_limit,
+        'has_more': has_more,
+        'next_offset': clamped_offset + clamped_limit if has_more else None,
+    }
+
+
+def analysis_limits_from_config(config: Any) -> Dict[str, int]:
+    """Extract bounded-output limits from an AiConfig or compatible object.
+
+    Returns a dict with keys for each bounded parameter, defaulting to safe values.
+    If config is None, returns all defaults.
+    
+    This function reads the following configuration sources in order of precedence:
+    1. Object attributes (analysis_max_* if config is not None)
+    2. Default hard-coded fallbacks
+    
+    For Phase T validation: see validate_analysis_limits() for schema checking.
+    """
+    DEFAULTS = {
+        'max_nodes': 32,
+        'max_edges': 64,
+        'max_paths': 8,
+        'max_constraints': 8,
+        'max_effects': 8,
+        'max_callers': 16,
+        'max_callees': 16,
+        'max_string_refs': 16,
+        'max_import_refs': 16,
+        'max_disassembly_items': 32,
+        'max_functions': 64,
+        'max_results': 32,
+    }
+    
+    if config is None:
+        return dict(DEFAULTS)
+    
+    result = {}
+    for key, def_val in DEFAULTS.items():
+        attr_name = key.replace('max_', 'analysis_max_')
+        val = getattr(config, attr_name, def_val)
+        # Clamp to int >= 0
+        try:
+            val = max(0, int(val)) if val is not None else def_val
+        except (TypeError, ValueError):
+            val = def_val
+        result[key] = val
+    
+    return result
+
+
+def validate_analysis_limits(config: Optional[Any] = None) -> Dict[str, Any]:
+    """Validate analysis limits configuration and return normalized dict.
+    
+    Raises ValueError if any limit is invalid (non-integer or negative).
+    Returns a normalized dict of all limits with values clamped to int >= 0.
+    
+    For Phase T: This function validates schema before limits are used anywhere,
+    ensuring early failure with clear error messages.
+    """
+    ERROR_SUFFIX = " — use analysis_max_<key>=<int>= 0 in config"
+    errors = []
+    
+    DEFAULTS = {
+        'max_nodes': ('analysis_max_nodes', 32),
+        'max_edges': ('analysis_max_edges', 64),
+        'max_paths': ('analysis_max_paths', 8),
+        'max_constraints': ('analysis_max_constraints', 8),
+        'max_effects': ('analysis_max_effects', 8),
+        'max_callers': ('analysis_max_callers', 16),
+        'max_callees': ('analysis_max_callees', 16),
+        'max_string_refs': ('analysis_max_string_refs', 16),
+        'max_import_refs': ('analysis_max_import_refs', 16),
+        'max_disassembly_items': ('analysis_max_disassembly_items', 32),
+        'max_functions': ('analysis_max_functions', 64),
+        'max_results': ('analysis_max_results', 32),
+    }
+    
+    result = {}
+    for key, (attr_name, def_val) in DEFAULTS.items():
+        if config is not None:
+            val = getattr(config, attr_name, def_val)
+            if val is not None:
+                try:
+                    int_val = int(val)
+                    if int_val < 0:
+                        errors.append(f"{key}: {int_val} (negative value{ERROR_SUFFIX})")
+                        continue
+                    result[key] = int_val
+                except (TypeError, ValueError):
+                    errors.append(f"{key}: '{val}' (not an integer{ERROR_SUFFIX})")
+                    continue
+        
+        if key not in result:
+            result[key] = def_val
+    
+    if errors:
+        raise ValueError("Invalid analysis limits:\n  - " + "\n  - ".join(errors))
+    
+    return result
 
 
 def collect_strings(vw: Any) -> List[Dict[str, Any]]:

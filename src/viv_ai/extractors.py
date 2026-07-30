@@ -1,3 +1,4 @@
+import fnmatch
 import json
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -13,6 +14,30 @@ LOC_IMPORT = getattr(vivisect, 'LOC_IMPORT', 9)
 LOC_STRING = getattr(vivisect, 'LOC_STRING', 2)
 LOC_UNI = getattr(vivisect, 'LOC_UNI', 3)
 REF_CODE = getattr(vivisect, 'REF_CODE', 1)
+
+
+DEFAULT_LIMITS = {
+    'max_entry_points': 8,
+    'max_imports': 32,
+    'max_exports': 32,
+    'max_strings': 32,
+    'max_top_functions': 16,
+    'max_callers': 16,
+    'max_callees': 16,
+    'max_string_refs': 16,
+    'max_import_refs': 16,
+    'max_disassembly_items': 32,
+    'max_functions': 64,
+    'max_results': 32,
+}
+
+
+def _limits_from_config(analysis_limits: dict | None) -> dict:
+    """Merge caller-supplied limits over DEFAULT_LIMITS."""
+    merged = dict(DEFAULT_LIMITS)
+    if analysis_limits:
+        merged.update(analysis_limits)
+    return merged
 
 
 def _hex(va: int) -> str:
@@ -62,7 +87,14 @@ def _collect_function_stats(vw: Any, fva: int) -> Dict[str, Any]:
     }
 
 
-def extract_binary_overview(vw: Any, max_entry_points: int = 8, max_imports: int = 32, max_exports: int = 32, max_strings: int = 32, max_top_functions: int = 16) -> Dict[str, Any]:
+def extract_binary_overview(vw: Any, max_entry_points: int = 8, max_imports: int = 32, max_exports: int = 32, max_strings: int = 32, max_top_functions: int = 16, analysis_limits: dict | None = None) -> Dict[str, Any]:
+    if analysis_limits:
+        limits = _limits_from_config(analysis_limits)
+        max_entry_points = limits['max_entry_points']
+        max_imports = limits['max_imports']
+        max_exports = limits['max_exports']
+        max_strings = limits['max_strings']
+        max_top_functions = limits['max_top_functions']
     entry_points = [_hex(va) for va in list(vw.getEntryPoints())]
     imports = [
         {'va': _hex(lva), 'size': int(lsize), 'symbol': str(tinfo)}
@@ -107,7 +139,14 @@ def extract_binary_overview(vw: Any, max_entry_points: int = 8, max_imports: int
     }
 
 
-def extract_function_overview(vw: Any, fva: int, max_callers: int = 16, max_callees: int = 16, max_string_refs: int = 16, max_import_refs: int = 16, max_disassembly_items: int = 32) -> Dict[str, Any]:
+def extract_function_overview(vw: Any, fva: int, max_callers: int = 16, max_callees: int = 16, max_string_refs: int = 16, max_import_refs: int = 16, max_disassembly_items: int = 32, analysis_limits: dict | None = None) -> Dict[str, Any]:
+    if analysis_limits:
+        limits = _limits_from_config(analysis_limits)
+        max_callers = limits['max_callers']
+        max_callees = limits['max_callees']
+        max_string_refs = limits['max_string_refs']
+        max_import_refs = limits['max_import_refs']
+        max_disassembly_items = limits['max_disassembly_items']
     blocks = list(vw.getFunctionBlocks(fva))
     callers = [_hex(va) for va in list(getattr(vw, 'getCallers', lambda _va: [])(fva))]
     callees: list[str] = []
@@ -186,3 +225,18 @@ def _normalize_api(api: Any) -> Dict[str, Any] | None:
         'name': funcname,
         'arguments': [{'type': argtype, 'name': argname} for argtype, argname in list(callargs)],
     }
+
+
+def find_functions(vw: Any, name_glob: str | None = None, min_callers: int = 0, max_results: int = 32) -> List[Dict[str, Any]]:
+    matches = []
+    for fva in list(vw.getFunctions()):
+        name = _safe_get_name(vw, fva)
+        if name_glob and not fnmatch.fnmatch(name, name_glob):
+            continue
+        stats = _collect_function_stats(vw, fva)
+        if min_callers > 0 and stats['caller_count'] < min_callers:
+            continue
+        matches.append(stats)
+        if len(matches) >= max_results:
+            break
+    return matches

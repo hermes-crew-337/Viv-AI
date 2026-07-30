@@ -5,8 +5,18 @@ class FakeVW:
     def __init__(self):
         self.meta = {'Architecture': 'amd64', 'Platform': 'linux', 'Format': 'elf'}
 
-    def getMeta(self, name):
-        return self.meta.get(name)
+    def getMeta(self, name, default=None):
+        return self.meta.get(name, default)
+
+    def getFunctions(self):
+        return [0x401000, 0x402000, 0x403000]
+
+    def getName(self, va):
+        names = {0x401000: 'main', 0x402000: 'helper', 0x403000: 'leaf'}
+        return names.get(va)
+
+    def getFunctionBlocks(self, fva):
+        return [(fva, 16, fva)]
 
 
 class FakeAnalysisService:
@@ -35,6 +45,23 @@ class FakeAnalysisService:
                 'evidence': ['0x00401000'],
             },
         }
+
+    def analyze_functions(self, vw, fvas, options=None):
+        self.calls.append({'task': 'batch_function', 'fvas': fvas, 'options': dict(options or {})})
+        return [
+            {
+                'fva': f'0x{fva:08x}',
+                'task_type': 'function_summary',
+                'cache_hit': False,
+                'provider': {'type': 'ollama', 'model': 'qwen'},
+                'analysis': {
+                    'summary': f'analyzed 0x{fva:08x}',
+                    'confidence': 'medium',
+                    'evidence': [],
+                },
+            }
+            for fva in fvas
+        ]
 
     def analyze_binary(self, vw, options=None):
         self.calls.append({'task': 'binary', 'vw': vw, 'options': dict(options or {})})
@@ -138,6 +165,63 @@ class McpAiToolTests(unittest.TestCase):
 
         self.assertFalse(result['ok'])
         self.assertIn('provider offline', result['error'])
+
+    def test_ai_analyze_functions_registry(self):
+        from viv_ai.mcp.tools import build_default_registry
+
+        registry = build_default_registry()
+
+        self.assertIn('ai_analyze_functions', registry)
+
+    def test_ai_analyze_functions_batch(self):
+        service = FakeAnalysisService()
+        server = self._server(service)
+        workspace_id = self._open(server)
+
+        result = server.call_tool('ai_analyze_functions', workspace_id=workspace_id, fvas=['0x401000', '0x401050'])
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['request_scope'], 'function')
+        self.assertEqual(len(result['data']['results']), 2)
+        self.assertEqual(result['data']['results'][0]['fva'], '0x00401000')
+        self.assertEqual(result['data']['results'][0]['analysis']['summary'], 'analyzed 0x00401000')
+        self.assertEqual(result['data']['results'][1]['fva'], '0x00401050')
+        self.assertIn('analyzed 2/2', result['summary'])
+        self.assertEqual(service.calls[0]['fvas'], [0x401000, 0x401050])
+
+    def test_find_functions_in_registry(self):
+        from viv_ai.mcp.tools import build_default_registry
+
+        registry = build_default_registry()
+
+        self.assertIn('find_functions', registry)
+
+    def test_find_functions_via_mcp(self):
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        workspace_id = server.call_tool('workspace_open', path='/tmp/sample.bin')['data']['workspace_id']
+
+        result = server.call_tool('find_functions', workspace_id=workspace_id)
+
+        self.assertTrue(result['ok'])
+        self.assertIn('functions', result['data'])
+        self.assertIsInstance(result['data']['functions'], list)
+
+    def test_export_analysis_report_via_mcp(self):
+        from viv_ai.mcp.server import VivAIMcpServer
+
+        server = VivAIMcpServer(workspace_loader=lambda path: FakeVW())
+        workspace_id = server.call_tool('workspace_open', path='/tmp/sample.bin')['data']['workspace_id']
+
+        result = server.call_tool('export_analysis_report', workspace_id=workspace_id)
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertIn('metadata', data)
+        self.assertIn('functions', data)
+        self.assertIn('markdown', data)
+        self.assertIn('Binary Analysis Report', data['markdown'])
 
 
 if __name__ == '__main__':

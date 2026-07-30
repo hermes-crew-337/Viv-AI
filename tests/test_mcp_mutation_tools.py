@@ -7,8 +7,8 @@ class FakeVW:
         self.calls = []
         self.rename_result = Ellipsis
 
-    def getMeta(self, name):
-        return self.meta.get(name)
+    def getMeta(self, name, default=None):
+        return self.meta.get(name, default)
 
     def makeName(self, va, name):
         self.calls.append(('makeName', va, name))
@@ -68,14 +68,93 @@ class McpMutationToolTests(unittest.TestCase):
         self.assertIn('readonly', comment['error'])
         self.assertEqual(vw.calls, [])
 
-    def test_apply_tools_are_blocked_in_review_mode(self):
-        server = self._server(policy='review_before_apply')
-        workspace_id = self._open(server)
+    def test_apply_function_rename_applied_flags_committed(self):
+        server = self._server('direct_apply_enabled')
+        wid = self._open(server)
 
-        rename = server.call_tool('apply_function_rename', workspace_id=workspace_id, fva='0x401000', new_name='decrypt_payload')
+        result = server.call_tool('apply_function_rename', workspace_id=wid, fva='0x401000', new_name='custom')
 
-        self.assertFalse(rename['ok'])
-        self.assertIn('review required', rename['error'])
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['data']['applied'])
+
+    def test_campaign_renames_proposal_registered(self):
+        from viv_ai.mcp.tools import build_default_registry
+
+        registry = build_default_registry()
+        self.assertIn('propose_campaign_renames', registry)
+        self.assertIn('apply_campaign_renames', registry)
+        self.assertIn('propose_campaign_comments', registry)
+        self.assertIn('apply_campaign_comments', registry)
+
+    def test_campaign_renames_proposal_readonly(self):
+        server = self._server('conservative_readonly')
+        wid = self._open(server)
+
+        result = server.call_tool('propose_campaign_renames', workspace_id=wid, renames=[
+            {'fva': '0x401000', 'new_name': 'func_a'},
+            {'fva': '0x401010', 'new_name': 'func_b'},
+        ])
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertEqual(len(data['results']), 2)
+        for r in data['results']:
+            self.assertFalse(r['applied'])
+            self.assertIn('readonly', r['reason'])
+
+    def test_campaign_renames_apply_readonly_fails(self):
+        server = self._server('conservative_readonly')
+        wid = self._open(server)
+
+        result = server.call_tool('apply_campaign_renames', workspace_id=wid, renames=[
+            {'fva': '0x401000', 'new_name': 'func_a'},
+        ])
+
+        self.assertFalse(result['ok'])
+
+    def test_campaign_renames_apply_allowed(self):
+        server = self._server('direct_apply_enabled')
+        wid = self._open(server)
+
+        result = server.call_tool('apply_campaign_renames', workspace_id=wid, renames=[
+            {'fva': '0x401000', 'new_name': 'func_a'},
+        ])
+        vw = server.session_manager.get_workspace(wid)
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertEqual(len(data['results']), 1)
+        self.assertTrue(data['results'][0]['applied'])
+        self.assertIn(('makeName', 0x401000, 'func_a'), vw.calls)
+
+    def test_campaign_comments_proposal(self):
+        server = self._server('conservative_readonly')
+        wid = self._open(server)
+
+        result = server.call_tool('propose_campaign_comments', workspace_id=wid, comments=[
+            {'va': '0x401000', 'comment': 'entry point'},
+            {'va': '0x401005', 'comment': 'loop start'},
+        ])
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertEqual(len(data['results']), 2)
+        for r in data['results']:
+            self.assertFalse(r['applied'])
+
+    def test_campaign_comments_apply_allowed(self):
+        server = self._server('direct_apply_enabled')
+        wid = self._open(server)
+
+        result = server.call_tool('apply_campaign_comments', workspace_id=wid, comments=[
+            {'va': '0x401000', 'comment': 'entry'},
+        ])
+        vw = server.session_manager.get_workspace(wid)
+
+        self.assertTrue(result['ok'])
+        data = result['data']
+        self.assertTrue(data['results'][0]['applied'])
+        self.assertIn(('setComment', 0x401000, 'entry'), vw.calls)
 
     def test_apply_tools_mutate_when_direct_apply_enabled(self):
         server = self._server(policy='direct_apply_enabled')

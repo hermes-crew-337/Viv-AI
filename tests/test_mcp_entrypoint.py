@@ -147,6 +147,97 @@ class McpEntrypointTests(unittest.TestCase):
         self.assertTrue(keep_running)
         self.assertEqual(response['error']['code'], -32602)
 
+    def test_build_arg_parser_accepts_config_option(self):
+        from viv_ai.mcp.entrypoint import build_arg_parser
+
+        parser = build_arg_parser()
+        args = parser.parse_args(['--once', '--config', '/tmp/viv-ai.json'])
+
+        self.assertTrue(args.once)
+        self.assertEqual(args.config, '/tmp/viv-ai.json')
+
+    def test_main_uses_config_file_when_provided(self):
+        """Verify main() loads config from --config and passes it to the server."""
+        import json
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, 'test-config.json')
+            config_data = {
+                'default_provider': 'test-provider',
+                'default_model': 'test-model',
+                'mcp_max_concurrent_tools': 7,
+                'mcp_max_tool_seconds': 42,
+                'providers': {
+                    'test-provider': {
+                        'provider_type': 'ollama',
+                        'endpoint': 'http://127.0.0.1:11434',
+                        'model': 'test-model',
+                    }
+                },
+            }
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f)
+
+            from viv_ai.mcp.entrypoint import main
+
+            instream = Path(tmpdir) / 'stdin.txt'
+            instream.write_text(
+                json.dumps({'id': 1, 'method': 'server/info', 'params': {}}) + '\n'
+            )
+            outstream = Path(tmpdir) / 'stdout.txt'
+
+            with open(instream, 'r') as stdin_fh:
+                with open(outstream, 'w') as stdout_fh:
+                    exit_code = main(
+                        argv=['--once', '--config', config_path],
+                        instream=stdin_fh,
+                        outstream=stdout_fh,
+                    )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(outstream.read_text())
+            info = payload['result']
+            self.assertEqual(info['name'], 'viv_ai_mcp')
+            self.assertTrue(info['running'])
+            self.assertEqual(info['limits']['max_concurrent_tools'], 7)
+            self.assertEqual(info['limits']['max_tool_seconds'], 42)
+
+    def test_main_uses_default_in_memory_config_when_no_config_given(self):
+        """Verify main() uses default in-memory config when --config is omitted."""
+        import json
+        import os
+        import tempfile
+        from pathlib import Path
+
+        os.environ.pop('VIV_AI_CONFIG', None)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from viv_ai.mcp.entrypoint import main
+
+            instream = Path(tmpdir) / 'stdin.txt'
+            instream.write_text(
+                json.dumps({'id': 1, 'method': 'server/info', 'params': {}}) + '\n'
+            )
+            outstream = Path(tmpdir) / 'stdout.txt'
+
+            with open(instream, 'r') as stdin_fh:
+                with open(outstream, 'w') as stdout_fh:
+                    exit_code = main(
+                        argv=['--once'],
+                        instream=stdin_fh,
+                        outstream=stdout_fh,
+                    )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(outstream.read_text())
+            info = payload['result']
+            self.assertEqual(info['name'], 'viv_ai_mcp')
+            self.assertEqual(info['limits']['max_concurrent_tools'], 4)
+            self.assertEqual(info['limits']['max_tool_seconds'], 30)
+
 
 if __name__ == '__main__':
     unittest.main()

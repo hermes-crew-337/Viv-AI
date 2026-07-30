@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import signal
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -8,8 +9,16 @@ from typing import Any, Callable, Dict, Optional
 
 from .schemas import ToolResponse
 from .security import resolve_mutation_policy
+from .filesystem import FilesystemPolicy
 from .session import WorkspaceSessionError, WorkspaceSessionManager
 from .tools import build_default_registry, build_tool_metadata
+
+
+class ServerMode(enum.Enum):
+    """Workspace access mode for the MCP server."""
+    LOCAL = 'local'
+    REMOTE = 'remote'
+    HYBRID = 'hybrid'
 
 
 class _ToolTimeout(RuntimeError):
@@ -25,6 +34,16 @@ class _AsyncCallState:
 
 @contextmanager
 def _time_limit(seconds: float):
+    """Enforce a wall-clock timeout via SIGALRM (Unix-only).
+
+    Falls through with no timeout enforcement on non-Unix platforms
+    where signal.SIGALRM is unavailable (e.g. Windows).
+    """
+    if not hasattr(signal, 'SIGALRM'):
+        # No SIGALRM available — timeout is a best-effort hint
+        yield
+        return
+
     def _handle_timeout(signum, frame):
         raise _ToolTimeout(f'timed out after {seconds:g}s')
 
@@ -68,7 +87,8 @@ ATTACKER_SOURCES = {
 }
 
 class VivAIMcpServer:
-    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None):
+    def __init__(self, tool_registry: Optional[Dict[str, Callable[..., Dict[str, Any]]]] = None, session_manager: Optional[WorkspaceSessionManager] = None, workspace_loader=None, analysis_service=None, mutation_policy=None, read_only: Optional[bool] = None, max_concurrent_tools: Optional[int] = None, max_tool_seconds: Optional[float] = None, mode: ServerMode = ServerMode.HYBRID, filesystem_policy: Optional['FilesystemPolicy'] = None, cache_max: int = 0, prefer_existing_viv: bool = True, force_reanalyze: bool = False):
+        self.mode = mode
         # Provide a default workspace_loader if none given, so the server works standalone
         if workspace_loader is None:
             def _default_loader(path: str) -> Any:
@@ -79,12 +99,26 @@ class VivAIMcpServer:
                 return vw
             workspace_loader = _default_loader
 
-        self.session_manager = session_manager or WorkspaceSessionManager(workspace_loader=workspace_loader, analysis_service=analysis_service, mutation_policy=mutation_policy)
-        if session_manager is not None:
-            if analysis_service is not None:
-                self.session_manager.analysis_service = analysis_service
-            if mutation_policy is not None:
-                self.session_manager.mutation_policy = resolve_mutation_policy(mutation_policy)
+        self.session_manager = session_manager or WorkspaceSessionManager(
+            workspace_loader=workspace_loader,
+            analysis_service=analysis_service,
+            mutation_policy=mutation_policy,
+            mode=mode.value,
+            filesystem_policy=filesystem_policy,
+            max_cached=cache_max,
+            prefer_existing_viv=prefer_existing_viv,
+            force_reanalyze=force_reanalyze,
+        )
+        # read_only is a high-level bool that overrides the mutation_policy
+        # derived from config — IF mutation_policy wasn't explicitly provided.
+        # When mutation_policy is explicitly set, it always takes precedence.
+        if read_only is not None and mutation_policy is None:
+            from ..models import MutationPolicy
+            if read_only:
+                self.session_manager.mutation_policy = MutationPolicy.CONSERVATIVE_READONLY
+            elif self.session_manager.mutation_policy == MutationPolicy.CONSERVATIVE_READONLY:
+                # No explicit mutation_policy was set, so flip to enabled
+                self.session_manager.mutation_policy = MutationPolicy.DIRECT_APPLY_ENABLED
         config = getattr(getattr(self.session_manager, 'analysis_service', None), 'config', None)
         self.max_concurrent_tools = int(max_concurrent_tools if max_concurrent_tools is not None else getattr(config, 'mcp_max_concurrent_tools', 4))
         self.max_tool_seconds = float(max_tool_seconds if max_tool_seconds is not None else getattr(config, 'mcp_max_tool_seconds', 30))
@@ -108,6 +142,9 @@ class VivAIMcpServer:
                 'max_concurrent_tools': self.max_concurrent_tools,
                 'max_tool_seconds': self.max_tool_seconds,
             },
+            'mutation_policy': self.session_manager.mutation_policy.value,
+            'read_only': self.session_manager.mutation_policy.value == 'conservative_readonly',
+            'mode': self.mode.value,
         }
 
     def start(self) -> Dict[str, Any]:

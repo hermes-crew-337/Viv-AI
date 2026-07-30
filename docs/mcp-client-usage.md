@@ -2,6 +2,14 @@
 
 This document shows minimal client-side setup patterns and example tool calls for the current Viv-AI MCP server.
 
+Before launching the server, remember the config lookup order:
+- explicit CLI flag: `--config /path/to/config.json`
+- env override: `VIV_AI_CONFIG=/path/to/config.json`
+- default file: `~/.config/viv-ai/config.json`
+- otherwise: default in-memory config
+
+Provider config examples for Ollama, OpenAI-compatible APIs, Anthropic, Gemini, and OpenRouter-style use live in `docs/provider-configuration.md`.
+
 ## Server posture
 
 Current operational defaults:
@@ -67,18 +75,38 @@ Example prompts once connected:
 Optional HTTP transport is also available:
 
 ```bash
+# Using bearer token authentication
 export VIV_AI_MCP_TOKEN=replace-me
 viv-ai-mcp-http --host 127.0.0.1 --port 8765 --auth-token-env VIV_AI_MCP_TOKEN
+
+# Using API key authentication
+export VIV_AI_MCP_API_KEY=replace-me
+viv-ai-mcp-http --host 127.0.0.1 --port 8765 --api-key-env VIV_AI_MCP_API_KEY
+
+# With request size limit (default is 1MB)
+viv-ai-mcp-http --host 127.0.0.1 --port 8765 --max-request-size 2048
 ```
 
-Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with:
+Then POST JSON-RPC requests to `http://127.0.0.1:8765/mcp` with either:
 
+Bearer token authentication:
 ```http
 Authorization: Bearer replace-me
 Content-Type: application/json
 ```
 
-`GET /healthz` returns a lightweight health/transport summary without exposing the token value.
+API key authentication (two options):
+```http
+# Option 1: X-API-Key header
+X-API-Key: replace-me
+Content-Type: application/json
+
+# Option 2: Authorization header with Bearer prefix
+Authorization: Bearer replace-me
+Content-Type: application/json
+```
+
+`GET /healthz` returns a lightweight health/transport summary without exposing the token or API key value.
 
 ## Claude Desktop / generic stdio MCP shape
 
@@ -168,6 +196,34 @@ Apply a rename when direct apply is enabled server-side:
 ```json
 {"tool":"apply_function_rename","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000","new_name":"decrypt_payload"}}
 ```
+
+### Leader session tools (Vivisect Server required)
+
+First connect to a remote workspace:
+
+```json
+{"tool":"server_connect","arguments":{"host":"10.0.0.5","port":16520,"wsname":"my_binary.viv"}}
+```
+
+Then coordinate AI-driven navigation with leader sessions:
+
+```json
+{"tool":"leader_start_session","arguments":{"workspace_id":"<workspace-id>"}}
+{"tool":"leader_annotate","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000","comment":"exploit-hook"}}
+{"tool":"leader_explain_binary","arguments":{"workspace_id":"<workspace-id>"}}
+{"tool":"leader_explain_graph","arguments":{"workspace_id":"<workspace-id>","fva":"0x401000"}}
+{"tool":"leader_status","arguments":{"workspace_id":"<workspace-id>"}}
+```
+
+The `--mode` CLI flag scopes workspace access:
+
+| Flag | Behavior |
+|------|----------|
+| `--mode local` | local file opens only; remote `server_connect` blocked |
+| `--mode remote` | server connections only; local `workspace_open` blocked |
+| `--mode hybrid` | both allowed (default) |
+
+Check mode at runtime via `server/info`:
 
 ## Notes
 
